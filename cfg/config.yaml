@@ -1,0 +1,100 @@
+# Reactive configuration — used by the embedded freeradicals binary.
+# Mirrors reactive/cfg/config.yaml exactly; only port and db_root differ.
+
+server:
+  host: "0.0.0.0"
+  port: 4749
+  workers: 0            # 0 = auto (num_cpus)
+  websocket_max_conns: 1024
+
+interfaces:
+  http:
+    enabled: true
+  pgwire:
+    enabled: true
+  ws:
+    enabled: true
+
+logging:
+  level: "info"
+  json: false
+  query_logging: false
+  debug: false
+
+security:
+  enable_tls: false
+  tls_cert_path: null
+  tls_key_path: null
+  allow_origin: null
+  admin_user: "admin"        # default dev admin — override via REACTIVE__SECURITY__ADMIN_USER
+  admin_password: "admin"    # default dev password — override via REACTIVE__SECURITY__ADMIN_PASSWORD
+  dev_insecure: false
+
+paths:
+  db_root: dbs
+  temp_dir: null
+  udf_dir: null
+  logs_dir: null
+  install_dir: null  # resolved automatically via REACTIVE_SCRIPTS_ROOT set in main.rs
+
+pgwire:
+  enabled: true
+  host: "0.0.0.0"
+  port: 5433
+  trace: false
+  trust: false
+  scram: true
+
+http:
+  request_body_limit_mb: 64
+  idle_timeout_secs: 60
+  session_idle_secs: 1800
+  session_abs_secs: 86400
+
+udf:
+  ordered_roots: []
+  lua_instruction_limit: 10000
+  lua_timeout_ms: 15000000
+  lua_remote_timeout_ms: 50000
+  lua_memory_limit_bytes: 8388608000
+  autoload_for_tests: false
+
+time:
+  utc_only: true
+
+metrics:
+  enabled: true
+  push_gateway: null
+
+ha:
+  enabled: false
+  engine: "openraft"
+
+storage:
+  parquet_compression: "zstd"
+  mmap_graphstore: true
+  max_open_files: 512
+  commit_window_ms: 3
+  gc_max_delta_records: 10000
+  gc_tombstone_ratio_ppm: 300000
+  gc_max_delta_age_ms: 300000
+
+autotune:
+  enabled: true
+  tick_ms: 2000
+  target_vis_ms: 1000
+  smoothing_alpha: 0.2
+  deriv_beta: 0.2
+  publisher_interval_min_ms: 100
+  publisher_interval_max_ms: 2000
+  max_step_ms: 100
+  catchup_budget_min: 64000
+  catchup_budget_max: 16000000
+  max_step_budget: 64000
+  hysteresis_ms: 150
+  lookback_min: 5
+
+dev_ftp:
+  enabled: false
+  addr: "0.0.0.0"
+  port: 2121

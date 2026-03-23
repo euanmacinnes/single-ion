@@ -1,0 +1,22 @@
+[package]
+name    = "single-ion"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "single-ion"
+path = "src/main.rs"
+
+# ── Service libraries ──────────────────────────────────────────────────────────
+[dependencies]
+db_server  = { path = "../reactive/crates/db_server" }
+ion        = { path = "../ion/crates/ion" }
+ion-config = { path = "../ion/crates/config" }
+gluon      = { path = "../gluon/crates/gluon" }
+neutrino   = { path = "../neutrino/crates/neutrino" }
+
+# ── Runtime / logging ─────────────────────────────────────────────────────────
+tokio              = { version = "1", features = ["full"] }
+anyhow             = "1"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
