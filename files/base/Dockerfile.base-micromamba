@@ -1,0 +1,21 @@
+# neutrino-base-micromamba — micromamba static binary on top of neutrino-base-standard
+# neutrino-base-standard is the compiled Neutrino binary (debian:bookworm-slim).
+# BASE_IMAGE is injected at build time by Neutrino — never hard-coded.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# Install curl + bzip2 (not present in debian:bookworm-slim; needed to fetch micromamba)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl bzip2 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV MAMBA_ROOT_PREFIX=/opt/conda \
+    PATH="/opt/conda/bin:${PATH}"
+
+RUN curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest \
+        | tar -xvj -C /usr/local/bin/ --strip-components=1 bin/micromamba \
+    && chmod +x /usr/local/bin/micromamba \
+    && micromamba shell init --shell bash --prefix /opt/conda
+
+WORKDIR /workspace

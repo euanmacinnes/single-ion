@@ -66,6 +66,12 @@ async fn main() -> Result<()> {
     if std::env::var("NEUTRINO_STATIC_DIR").is_err() {
         unsafe { std::env::set_var("NEUTRINO_STATIC_DIR", "../neutrino/static"); }
     }
+    // The monorepo root is needed to build neutrino-base-standard from source
+    // (the cargo-chef Dockerfile COPYs neutrino/, crates/, gluon/ from there).
+    // single-ion runs from single-ion/, so ".." is the monorepo root.
+    if std::env::var("NEUTRINO_BUILD_CONTEXT_DIR").is_err() {
+        unsafe { std::env::set_var("NEUTRINO_BUILD_CONTEXT_DIR", ".."); }
+    }
 
     tracing::info!("single-ion: loading service configs");
 

@@ -1,0 +1,129 @@
+# Neutrino — Kubernetes deployment manager + Python environment IDE
+#
+# Multi-stage build using cargo-chef for dependency-layer caching.
+#
+# Build from the monorepo root so that the path dependencies resolve correctly:
+#
+#   docker build -f Dockerfile.neutrino -t neutrino:latest .
+#
+# The monorepo layout that matters for this build:
+#
+#   neutrino/          ← Cargo workspace root (Cargo.toml / Cargo.lock)
+#     crates/neutrino/ ← main binary
+#     crates/ncli/     ← CLI binary
+#     files/base/      ← base-image Dockerfiles (on disk, editable at runtime)
+#     static/          ← CSS/JS served by the admin dashboard at runtime
+#   crates/
+#     workbook/        ← path dep of neutrino
+#     gluon-service/   ← path dep of neutrino
+#   gluon/
+#     Cargo.toml       ← workspace manifest for gluon_client (workspace.= true)
+#     crates/gluon_client/  ← path dep of gluon-service
+
+# ── Stage 1: chef ─────────────────────────────────────────────────────────────
+# Install cargo-chef and prepare the dependency recipe.
+FROM rust:1.92-slim-bookworm AS chef
+LABEL authors="Free Radicals"
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && cargo install cargo-chef --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mirror the monorepo path-dep layout so cargo can resolve the workspace graph.
+# We only copy manifests at this stage — no source yet.
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/neutrino/Cargo.toml          neutrino/crates/neutrino/Cargo.toml
+COPY neutrino/crates/ncli/Cargo.toml              neutrino/crates/ncli/Cargo.toml
+COPY crates/workbook/Cargo.toml                   crates/workbook/Cargo.toml
+COPY crates/gluon-service/Cargo.toml              crates/gluon-service/Cargo.toml
+COPY gluon/Cargo.toml                             gluon/Cargo.toml
+COPY gluon/crates/gluon_client/Cargo.toml         gluon/crates/gluon_client/Cargo.toml
+
+WORKDIR /app/neutrino
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ── Stage 2: cook ─────────────────────────────────────────────────────────────
+# Compile all dependencies using the recipe (cached until Cargo.* changes).
+FROM rust:1.92-slim-bookworm AS cook
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && cargo install cargo-chef --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=chef /app/neutrino/recipe.json neutrino/recipe.json
+WORKDIR /app/neutrino
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# ── Stage 3: build ────────────────────────────────────────────────────────────
+# Compile neutrino and ncli binaries with the pre-cooked dependency cache.
+FROM rust:1.92-slim-bookworm AS build
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Restore the cooked dependency cache from stage 2
+COPY --from=cook /app/neutrino/target             neutrino/target
+
+# Full source — copy subdirs explicitly so neutrino/target/ from the host
+# never overwrites the cooked cache above.
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/                             neutrino/crates/
+COPY crates/workbook/                             crates/workbook/
+COPY crates/gluon-service/                        crates/gluon-service/
+COPY gluon/Cargo.toml                             gluon/Cargo.toml
+COPY gluon/crates/gluon_client/                   gluon/crates/gluon_client/
+
+WORKDIR /app/neutrino
+RUN cargo build --release --bin neutrino --bin ncli
+
+# ── Stage 4: runtime ──────────────────────────────────────────────────────────
+# Minimal image: just the binaries + runtime assets.  No Rust toolchain,
+# no build deps, no source.
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libssl3 \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/neutrino
+
+# Compiled binaries
+COPY --from=build /app/neutrino/target/release/neutrino /usr/local/bin/neutrino
+COPY --from=build /app/neutrino/target/release/ncli     /usr/local/bin/ncli
+
+# Static assets served by the admin dashboard (/static/css/, /static/js/, …)
+COPY neutrino/static/ ./static/
+
+# Operator mounts:
+#   /opt/neutrino/cfg  — neutrino.yaml config file
+#   /opt/neutrino/data — environments, builds, registry, pipenv dirs
+VOLUME ["/opt/neutrino/cfg", "/opt/neutrino/data"]
+
+ENV NEUTRINO_BIND=0.0.0.0:4748
+
+EXPOSE 4748
+
+ENTRYPOINT ["/usr/local/bin/neutrino"]
+CMD []
