@@ -45,6 +45,8 @@ COPY crates/workbook/Cargo.toml                   crates/workbook/Cargo.toml
 COPY crates/gluon-service/Cargo.toml              crates/gluon-service/Cargo.toml
 COPY gluon/Cargo.toml                             gluon/Cargo.toml
 COPY gluon/crates/gluon_client/Cargo.toml         gluon/crates/gluon_client/Cargo.toml
+COPY gluon/crates/gluon/Cargo.toml                gluon/crates/gluon/Cargo.toml
+COPY gluon/crates/gcli/Cargo.toml                 gluon/crates/gcli/Cargo.toml
 
 WORKDIR /app/neutrino
 RUN cargo chef prepare --recipe-path recipe.json
@@ -64,6 +66,19 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=chef /app/neutrino/recipe.json neutrino/recipe.json
+
+# cargo chef cook still resolves the full workspace graph — it needs all manifests.
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/neutrino/Cargo.toml          neutrino/crates/neutrino/Cargo.toml
+COPY neutrino/crates/ncli/Cargo.toml              neutrino/crates/ncli/Cargo.toml
+COPY crates/workbook/Cargo.toml                   crates/workbook/Cargo.toml
+COPY crates/gluon-service/Cargo.toml              crates/gluon-service/Cargo.toml
+COPY gluon/Cargo.toml                             gluon/Cargo.toml
+COPY gluon/crates/gluon_client/Cargo.toml         gluon/crates/gluon_client/Cargo.toml
+COPY gluon/crates/gluon/Cargo.toml                gluon/crates/gluon/Cargo.toml
+COPY gluon/crates/gcli/Cargo.toml                 gluon/crates/gcli/Cargo.toml
+
 WORKDIR /app/neutrino
 RUN cargo chef cook --release --recipe-path recipe.json
 
