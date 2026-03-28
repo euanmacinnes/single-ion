@@ -83,9 +83,11 @@ async fn main() -> Result<()> {
 
     tracing::info!("single-ion: spawning services");
 
-    // Gluon is spawned first so it has the best chance of being ready before
-    // reactive and ion attempt to connect as pub/sub clients.
+    // Gluon must be listening before Reactive and ION try to connect.
+    // Spawn it first, then wait briefly for the WS listener to bind.
     let g = tokio::spawn(gluon::run(gluon_config));
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     let r = tokio::spawn(db_server::run());
     let i = tokio::spawn(ion::run(ion_config));
     let n = tokio::spawn(neutrino::run(neut_config));

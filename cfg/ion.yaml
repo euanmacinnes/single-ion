@@ -9,3 +9,7 @@ server:
 
 reactive:
   url: http://localhost:4749
+
+gluon:
+  enabled: true
+  url: ws://localhost:4747/ws

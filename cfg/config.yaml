@@ -94,6 +94,10 @@ autotune:
   hysteresis_ms: 150
   lookback_min: 5
 
+gluon:
+  enabled: true
+  url: "ws://localhost:4747/ws"
+
 dev_ftp:
   enabled: false
   addr: "0.0.0.0"
