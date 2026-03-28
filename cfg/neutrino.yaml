@@ -2,9 +2,6 @@
 # See neutrino/cfg/neutrino.yaml for the full option set.
 
 bind: "0.0.0.0:4748"
-# Disable the plain-HTTP admin listener — single-ion doesn't use TLS so
-# this is a no-op anyway, but set it to empty to avoid any port collision.
-admin_bind: ""
 # Path to Jinja2 deployment templates — adjust if running from a different working directory.
 templates_dir: ../neutrino/templates
 namespace: default
