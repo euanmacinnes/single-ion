@@ -438,6 +438,7 @@ dependencies = [
  "bytes",
  "cookie",
  "futures-util",
+ "headers",
  "http",
  "http-body",
  "http-body-util",
@@ -1357,6 +1358,7 @@ dependencies = [
  "gluon-service",
  "hmac",
  "hnsw_rs",
+ "ion_theme",
  "mlua",
  "parking_lot",
  "password-hash",
@@ -2831,6 +2833,7 @@ dependencies = [
  "bytes",
  "figment",
  "hmac",
+ "ion_theme",
  "reqwest",
  "serde",
  "serde_json",
@@ -3472,6 +3475,7 @@ dependencies = [
  "hmac",
  "http-body-util",
  "ion-config",
+ "ion_theme",
  "reqwest",
  "serde",
  "serde_json",
@@ -3499,6 +3503,15 @@ dependencies = [
  "serde_yaml",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "ion_theme"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "http",
 ]
 
 [[package]]
@@ -4156,6 +4169,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "indicatif",
+ "ion_theme",
  "k8s-openapi",
  "kube",
  "minijinja",

@@ -16,6 +16,6 @@ ENV MAMBA_ROOT_PREFIX=/opt/conda \
 RUN curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest \
         | tar -xvj -C /usr/local/bin/ --strip-components=1 bin/micromamba \
     && chmod +x /usr/local/bin/micromamba \
-    && micromamba shell init --shell bash --prefix /opt/conda
+    && micromamba shell init --shell bash --root-prefix /opt/conda
 
 WORKDIR /workspace

@@ -67,7 +67,8 @@ RUN apt-get update \
 
 COPY --from=chef /app/neutrino/recipe.json neutrino/recipe.json
 
-# cargo chef cook still resolves the full workspace graph — it needs all manifests.
+# cargo chef cook resolves the full workspace graph — it needs all manifests
+# plus stub source files for every path dependency outside the neutrino workspace.
 COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
 COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
 COPY neutrino/crates/neutrino/Cargo.toml          neutrino/crates/neutrino/Cargo.toml
@@ -78,6 +79,18 @@ COPY gluon/Cargo.toml                             gluon/Cargo.toml
 COPY gluon/crates/gluon_client/Cargo.toml         gluon/crates/gluon_client/Cargo.toml
 COPY gluon/crates/gluon/Cargo.toml                gluon/crates/gluon/Cargo.toml
 COPY gluon/crates/gcli/Cargo.toml                 gluon/crates/gcli/Cargo.toml
+
+# Stub sources for external path deps (cargo-chef only stubs workspace members).
+RUN mkdir -p crates/workbook/src \
+ && touch crates/workbook/src/lib.rs \
+ && mkdir -p crates/gluon-service/src \
+ && touch crates/gluon-service/src/lib.rs \
+ && mkdir -p gluon/crates/gluon_client/src \
+ && touch gluon/crates/gluon_client/src/lib.rs \
+ && mkdir -p gluon/crates/gluon/src \
+ && echo "fn main(){}" > gluon/crates/gluon/src/main.rs \
+ && mkdir -p gluon/crates/gcli/src \
+ && echo "fn main(){}" > gluon/crates/gcli/src/main.rs
 
 WORKDIR /app/neutrino
 RUN cargo chef cook --release --recipe-path recipe.json
@@ -103,10 +116,17 @@ COPY --from=cook /app/neutrino/target             neutrino/target
 COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
 COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
 COPY neutrino/crates/                             neutrino/crates/
+COPY neutrino/files/base/                         neutrino/files/base/
 COPY crates/workbook/                             crates/workbook/
 COPY crates/gluon-service/                        crates/gluon-service/
 COPY gluon/Cargo.toml                             gluon/Cargo.toml
 COPY gluon/crates/gluon_client/                   gluon/crates/gluon_client/
+
+# The cook stage compiled stub sources for these external path deps, giving
+# their artifacts a newer mtime than the real sources (which carry the original
+# host file mtime from COPY).  Touch them so cargo sees them as newer than the
+# cached stubs and recompiles them from real source.
+RUN find /app/crates /app/gluon/crates/gluon_client -name "*.rs" | xargs touch
 
 WORKDIR /app/neutrino
 RUN cargo build --release --bin neutrino --bin ncli
