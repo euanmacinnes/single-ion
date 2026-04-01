@@ -1269,6 +1269,7 @@ dependencies = [
  "polars-core",
  "pub-fields",
  "rand_core 0.9.5",
+ "rayon",
  "regex",
  "reqwest",
  "rpassword",
