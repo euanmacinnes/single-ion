@@ -15,18 +15,19 @@ changes.
 
 1. [Prerequisites](#prerequisites)
 2. [Building](#building)
-3. [Running](#running)
-4. [Ports](#ports)
-5. [Configuration](#configuration)
+3. [Windows desktop app (`single-ion-win`)](#windows-desktop-app-single-ion-win)
+4. [Running](#running)
+5. [Ports](#ports)
+6. [Configuration](#configuration)
    - [Working directory](#working-directory)
    - [Reactive (`cfg/config.yaml`)](#reactive-cfgconfigyaml)
    - [Ion (`cfg/ion.yaml`)](#ion-cfgionyaml)
    - [Gluon (`cfg/gluon.yaml`)](#gluon-cfggluonyaml)
    - [Neutrino (`cfg/neutrino.yaml`)](#neutrino-cfgneutrinoyaml)
-6. [Environment variables](#environment-variables)
-7. [Logging](#logging)
-8. [Shutdown](#shutdown)
-9. [Moving to distributed deployment](#moving-to-distributed-deployment)
+7. [Environment variables](#environment-variables)
+8. [Logging](#logging)
+9. [Shutdown](#shutdown)
+10. [Moving to distributed deployment](#moving-to-distributed-deployment)
 
 ---
 
@@ -56,6 +57,81 @@ For development:
 ```bash
 cd single-ion
 cargo build          # debug build, faster to compile
+```
+
+---
+
+## Windows desktop app (`single-ion-win`)
+
+`single-ion-win` is a Windows-only variant that opens a native **WebView2** window instead of
+requiring a separate browser.  All four services run identically to the headless binary, but
+every service is bound exclusively to **loopback (`127.0.0.1`)** using OS-assigned ephemeral
+ports — no fixed port numbers, no port conflicts, nothing reachable from the network.
+
+### Additional prerequisites
+
+| Requirement | Notes |
+|---|---|
+| WebView2 Runtime | Ships with Windows 10 1803+ and any machine that has Edge installed. Download the bootstrapper from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if needed. |
+
+### Building
+
+```bash
+cd single-ion
+cargo build --release --bin single-ion-win --features windows-app
+```
+
+The binary is written to `../target/release/single-ion-win.exe`.
+
+For development (keeps the console window visible so tracing output is readable):
+
+```bash
+cd single-ion
+cargo build --bin single-ion-win --features windows-app
+```
+
+### Running
+
+Run from the `single-ion/` directory, exactly like the headless binary:
+
+```bash
+cd single-ion
+../target/release/single-ion-win.exe
+```
+
+On startup the binary:
+
+1. Acquires a named Windows mutex (`Global\single-ion`) — a second launch exits immediately
+   rather than starting a conflicting instance.
+2. Reserves five ephemeral loopback ports from the OS (one each for Gluon, Reactive HTTP,
+   Reactive pgwire, ION, and Neutrino).
+3. Injects the resolved port numbers as environment variables so every service's config
+   system picks them up automatically — no changes to `cfg/*.yaml` are needed.
+4. Starts all four services in a background thread.
+5. Waits up to 30 seconds for ION to accept connections, then opens the WebView2 window
+   pointing at `http://127.0.0.1:<ion-port>`.
+
+Closing the window shuts the process down cleanly.
+
+### Port behaviour
+
+Because ports are OS-assigned at runtime, they are not fixed or predictable.  All
+inter-service URLs are wired automatically via environment variables — you do not need to
+set them manually.  The pgwire endpoint is still available on its assigned loopback port if
+you need SQL access; check the startup log for the actual port number:
+
+```
+INFO single-ion-win: ports gluon=49821 reactive=49822 pgwire=49823 ion=49824 neutrino=49825
+```
+
+### Logging
+
+In release builds the console window is hidden (`windows_subsystem = "windows"`), so
+`FR_LOG` output is silently discarded.  Debug builds keep the console.  To capture logs
+from a release build, redirect stderr to a file by launching from a terminal:
+
+```powershell
+../target/release/single-ion-win.exe 2> single-ion.log
 ```
 
 ---

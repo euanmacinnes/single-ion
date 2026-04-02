@@ -72,6 +72,20 @@ async fn main() -> Result<()> {
     if std::env::var("NEUTRINO_BUILD_CONTEXT_DIR").is_err() {
         unsafe { std::env::set_var("NEUTRINO_BUILD_CONTEXT_DIR", ".."); }
     }
+    if std::env::var("ION_SERVER__STATIC_DIR").is_err() {
+        unsafe { std::env::set_var("ION_SERVER__STATIC_DIR", "../ion/static"); }
+    }
+
+    // On first run Reactive needs admin credentials.  Without a TTY (release
+    // build / Windows GUI) the installer would otherwise exit with an error.
+    // Default to admin/admin so the binary works out of the box; either var
+    // can be overridden externally before launch.
+    if std::env::var("REACTIVE__SECURITY__ADMIN_USER").is_err() {
+        unsafe { std::env::set_var("REACTIVE__SECURITY__ADMIN_USER", "admin"); }
+    }
+    if std::env::var("REACTIVE__SECURITY__ADMIN_PASSWORD").is_err() {
+        unsafe { std::env::set_var("REACTIVE__SECURITY__ADMIN_PASSWORD", "admin"); }
+    }
 
     tracing::info!("single-ion: loading service configs");
 

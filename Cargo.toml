@@ -7,10 +7,16 @@ edition = "2024"
 name = "single-ion"
 path = "src/main.rs"
 
+[[bin]]
+name             = "single-ion-win"
+path             = "src/win.rs"
+required-features = ["windows-app"]
+
 # ── Features ──────────────────────────────────────────────────────────────────
 [features]
-default = []
-dev     = ["ion/dev"]
+default      = []
+dev          = ["ion/dev"]
+windows-app  = ["dep:wry", "dep:tao"]
 
 # ── Service libraries ──────────────────────────────────────────────────────────
 [dependencies]
@@ -25,3 +31,14 @@ tokio              = { version = "1", features = ["full"] }
 anyhow             = "1"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# ── Windows app (WebView2 shell) — only pulled in with --features windows-app ──
+[target.'cfg(windows)'.dependencies]
+wry = { version = "0.46", optional = true }
+tao = { version = "0.30", optional = true }
+
+# ── Build-time icon embedding (PNG → ICO → exe resource) ─────────────────────
+[build-dependencies]
+winresource = "0.1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ico   = "0.3"
