@@ -26,8 +26,8 @@ security:
   tls_cert_path: null
   tls_key_path: null
   allow_origin: null
-  admin_user: "admin"        # default dev admin — override via REACTIVE__SECURITY__ADMIN_USER
-  admin_password: "admin"    # default dev password — override via REACTIVE__SECURITY__ADMIN_PASSWORD
+  admin_user: null           # set via REACTIVE__SECURITY__ADMIN_USER
+  admin_password: null       # set via REACTIVE__SECURITY__ADMIN_PASSWORD
   dev_insecure: false
 
 paths:
