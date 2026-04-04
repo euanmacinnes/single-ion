@@ -41,9 +41,9 @@ async fn main() -> Result<()> {
     // Each service's try_init() calls are suppressed once this is set.
     let filter = std::env::var("FR_LOG")
         .unwrap_or_else(|_| "info".into());
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
-        .init();
+        .try_init();
 
     // Point reactive at the shared scripts directory.  This single variable drives UDF
     // discovery, the DDL installer fallback, and system-view loading — all via
