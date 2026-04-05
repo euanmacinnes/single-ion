@@ -1,8 +1,13 @@
-//! single-ion-win — Windows desktop shell
+//! single-ion-app — Desktop shell (cross-platform)
 //!
 //! Identical service set to the headless `single-ion` binary, but binds every
 //! service exclusively on loopback (`127.0.0.1`) using OS-assigned ephemeral
-//! ports, then opens a native WebView2 window pointing at ION's port.
+//! ports, then opens a native WebView window pointing at ION's port.
+//!
+//! Platform backends:
+//!   - Windows: WebView2
+//!   - Linux:   WebKitGTK
+//!   - macOS:   WKWebView
 //!
 //! Port strategy
 //! -------------
@@ -11,24 +16,26 @@
 //! injected as environment variables so every service's Figment/custom config
 //! system picks them up during its normal load phase.  The listeners are then
 //! dropped, giving each service a clean bind.  The TOCTOU window is negligible
-//! on loopback and is further guarded by the single-instance mutex check.
+//! on loopback and is further guarded by the single-instance check.
 //!
 //! Single-instance
 //! ---------------
-//! A named Windows mutex (`Global\single-ion`) prevents a second instance from
-//! starting.  If the mutex is already held the process exits immediately after
-//! attempting to bring the existing window to the foreground.
+//! Windows: a named mutex (`Global\single-ion`) prevents a second instance.
+//! Linux/macOS: an exclusive `flock` on a lock file in `$XDG_RUNTIME_DIR`
+//! (or `/tmp`) prevents a second instance.
 //!
 //! Build
 //! -----
 //! ```
 //! cd single-ion
-//! cargo build --bin single-ion-win --features windows-app
+//! cargo build --bin single-ion-app --features desktop-app
 //! ```
 
-// Hide the console window in release builds.  Debug builds keep it so that
-// tracing output remains visible during development.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Hide the console window in release builds on Windows.
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
@@ -43,7 +50,7 @@ use tao::{
 use tracing_subscriber::EnvFilter;
 use wry::WebViewBuilder;
 
-// ── Single-instance guard ────────────────────────────────────────────────────
+// ── Single-instance guard (Windows) ──────────────────────────────────────────
 
 /// Returns `true` if this is the first instance; `false` if another is running.
 ///
@@ -55,8 +62,6 @@ fn acquire_single_instance() -> bool {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
-    // Raw Win32 types/constants — avoids a direct windows-sys dep by using
-    // the same ABI that tao/wry already pull in transitively.
     type HANDLE  = *mut std::ffi::c_void;
     type BOOL    = i32;
     type LPCWSTR = *const u16;
@@ -77,12 +82,36 @@ fn acquire_single_instance() -> bool {
         .encode_wide()
         .collect();
 
-    // SAFETY: kernel32 is always available; name is a valid null-terminated
-    // wide string; we intentionally leak the handle to keep the mutex alive.
     unsafe {
         let _handle = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
         GetLastError() != ERROR_ALREADY_EXISTS
     }
+}
+
+// ── Single-instance guard (Unix) ─────────────────────────────────────────────
+
+/// Returns `true` if this is the first instance; `false` if another is running.
+///
+/// Uses an exclusive `flock` on a lock file.  The file descriptor is leaked
+/// intentionally so the lock is held for the process lifetime.  The OS releases
+/// it automatically on exit (including crashes).
+#[cfg(target_family = "unix")]
+fn acquire_single_instance() -> bool {
+    use std::os::unix::io::IntoRawFd;
+
+    let lock_dir = std::env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| "/tmp".into());
+    let lock_path = format!("{lock_dir}/single-ion.lock");
+
+    let file = match std::fs::File::create(&lock_path) {
+        Ok(f) => f,
+        Err(_) => return true, // can't create lock file — allow launch
+    };
+
+    // Try to acquire an exclusive, non-blocking lock.
+    let fd = file.into_raw_fd(); // leak the fd to hold the lock
+    let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+    rc == 0
 }
 
 // ── Port reservation ─────────────────────────────────────────────────────────
@@ -108,6 +137,33 @@ fn wait_for_tcp(port: u16, timeout: Duration) -> bool {
     false
 }
 
+// ── Runtime dependency check (Linux) ─────────────────────────────────────────
+
+/// Probe for required shared libraries via `dlopen` and return a list of
+/// missing ones.  Called before tao/wry initialise so the user gets a clear
+/// message instead of an opaque linker crash.
+#[cfg(target_os = "linux")]
+fn check_linux_dependencies() -> Vec<&'static str> {
+    use std::ffi::CString;
+
+    const REQUIRED: &[(&str, &str)] = &[
+        ("libgtk-3.so.0",          "libgtk-3-dev"),
+        ("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.1-dev"),
+    ];
+
+    let mut missing = Vec::new();
+    for &(soname, pkg) in REQUIRED {
+        let c_name = CString::new(soname).unwrap();
+        let handle = unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_LAZY) };
+        if handle.is_null() {
+            missing.push(pkg);
+        } else {
+            unsafe { libc::dlclose(handle); }
+        }
+    }
+    missing
+}
+
 // ── Shared static-dir setup (mirrors main.rs) ────────────────────────────────
 
 fn set_static_dirs() {
@@ -128,20 +184,31 @@ fn set_static_dirs() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
+    // ── 0. Check platform dependencies ───────────────────────────────────────
+    #[cfg(target_os = "linux")]
+    {
+        let missing = check_linux_dependencies();
+        if !missing.is_empty() {
+            eprintln!("\x1b[1;31merror:\x1b[0m single-ion-app requires the following system libraries:\n");
+            for pkg in &missing {
+                eprintln!("  - {pkg}");
+            }
+            eprintln!("\nInstall them with:\n");
+            eprintln!("  \x1b[1msudo apt install {}\x1b[0m      (Debian/Ubuntu)", missing.join(" "));
+            eprintln!("  \x1b[1msudo dnf install {}\x1b[0m      (Fedora)",
+                missing.iter().map(|p| p.replace("-dev", "-devel")).collect::<Vec<_>>().join(" "));
+            eprintln!();
+            anyhow::bail!("missing system dependencies");
+        }
+    }
+
     // ── 1. Single-instance guard ─────────────────────────────────────────────
-    #[cfg(target_os = "windows")]
     if !acquire_single_instance() {
-        // Another instance is running — nothing to do on this path for now.
-        // A future enhancement can use FindWindow + SetForegroundWindow to
-        // focus the existing window before exiting.
         eprintln!("single-ion is already running.");
         return Ok(());
     }
 
     // ── 2. Reserve five ephemeral loopback ports ─────────────────────────────
-    //
-    // We hold each TcpListener open until all env vars are set, then drop them
-    // atomically (from the OS's perspective) so services rebind immediately.
     let (gluon_port,    gl) = reserve()?;
     let (reactive_port, rl) = reserve()?;
     let (pgwire_port,   pl) = reserve()?;
@@ -149,27 +216,17 @@ fn main() -> Result<()> {
     let (neutrino_port, nl) = reserve()?;
 
     // ── 3. Inject resolved ports via environment variables ───────────────────
-    //
-    // Each service reads its config through its own system (Figment for ION /
-    // Gluon / Neutrino; custom REACTIVE__ parser for Reactive) — env vars are
-    // the shared override mechanism that requires no changes to service crates.
-    //
-    // Must be set before the service configs are loaded in the tokio thread.
-    // SAFETY: single-threaded at this point; no concurrent env reads yet.
     unsafe {
-        // Gluon — Figment, GLUON_ prefix, `bind` is a top-level host:port string
+        // Gluon
         std::env::set_var("GLUON_BIND", format!("127.0.0.1:{gluon_port}"));
 
-        // Reactive — custom REACTIVE__ parser
+        // Reactive
         std::env::set_var("REACTIVE__SERVER__HOST", "127.0.0.1");
         std::env::set_var("REACTIVE__SERVER__PORT", reactive_port.to_string());
         std::env::set_var("REACTIVE__PGWIRE__HOST", "127.0.0.1");
         std::env::set_var("REACTIVE__PGWIRE__PORT", pgwire_port.to_string());
         std::env::set_var("REACTIVE__GLUON__URL",
             format!("ws://127.0.0.1:{gluon_port}/ws"));
-        // Default admin credentials for the packaged desktop app — no config
-        // file mechanism exists for end users, so we inject them here.
-        // These are only set if not already overridden in the environment.
         if std::env::var("REACTIVE__SECURITY__ADMIN_USER").is_err() {
             std::env::set_var("REACTIVE__SECURITY__ADMIN_USER", "admin");
         }
@@ -177,7 +234,7 @@ fn main() -> Result<()> {
             std::env::set_var("REACTIVE__SECURITY__ADMIN_PASSWORD", "admin");
         }
 
-        // ION — Figment, ION_ prefix with __ split
+        // ION
         std::env::set_var("ION_SERVER__HOST", "127.0.0.1");
         std::env::set_var("ION_SERVER__PORT", ion_port.to_string());
         std::env::set_var("ION_REACTIVE__URL",
@@ -185,33 +242,26 @@ fn main() -> Result<()> {
         std::env::set_var("ION_GLUON__URL",
             format!("ws://127.0.0.1:{gluon_port}/ws"));
 
-        // Neutrino — Figment, NEUTRINO_ prefix, `bind` is a top-level host:port string
+        // Neutrino
         std::env::set_var("NEUTRINO_BIND", format!("127.0.0.1:{neutrino_port}"));
     }
 
-    // Release reserved ports — services must be able to rebind them immediately.
+    // Release reserved ports.
     drop(gl); drop(rl); drop(pl); drop(il); drop(nl);
 
     // ── 4. Static asset directories ──────────────────────────────────────────
     set_static_dirs();
 
     // ── 5. Logging ───────────────────────────────────────────────────────────
-    //
-    // In release builds the console is hidden (windows_subsystem = "windows"),
-    // so tracing output goes to stderr which is silently discarded.  Redirect
-    // FR_LOG output to a file here if persistent logs are needed.
     let filter = std::env::var("FR_LOG").unwrap_or_else(|_| "info".into());
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
         .init();
 
-    tracing::info!("single-ion-win: ports gluon={gluon_port} reactive={reactive_port} \
+    tracing::info!("single-ion-app: ports gluon={gluon_port} reactive={reactive_port} \
                     pgwire={pgwire_port} ion={ion_port} neutrino={neutrino_port}");
 
     // ── 6. Spawn services in a background Tokio runtime ──────────────────────
-    //
-    // The WebView event loop must run on the main thread (Windows requirement),
-    // so we move the async runtime to a dedicated OS thread.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -221,7 +271,7 @@ fn main() -> Result<()> {
         .name("services".into())
         .spawn(move || {
             rt.block_on(async {
-                tracing::info!("single-ion-win: loading service configs");
+                tracing::info!("single-ion-app: loading service configs");
 
                 let ion_config = match ion_config::load() {
                     Ok(c) => c,
@@ -230,7 +280,7 @@ fn main() -> Result<()> {
                 let gluon_config = gluon::config::Config::load().unwrap_or_default();
                 let neut_config  = neutrino::config::Config::load().unwrap_or_default();
 
-                tracing::info!("single-ion-win: spawning services");
+                tracing::info!("single-ion-app: spawning services");
 
                 // Gluon must be listening before Reactive and ION connect.
                 let g = tokio::spawn(gluon::run(gluon_config));
@@ -240,7 +290,6 @@ fn main() -> Result<()> {
                 let i = tokio::spawn(ion::run(ion_config));
                 let n = tokio::spawn(neutrino::run(neut_config));
 
-                // Log unexpected exits; the process will end when the window closes.
                 tokio::select! {
                     res = g => tracing::error!("gluon exited: {res:?}"),
                     res = r => tracing::error!("reactive exited: {res:?}"),
@@ -252,11 +301,11 @@ fn main() -> Result<()> {
         .context("spawn services thread")?;
 
     // ── 7. Wait for ION to accept connections ────────────────────────────────
-    tracing::info!("single-ion-win: waiting for ION on port {ion_port}");
+    tracing::info!("single-ion-app: waiting for ION on port {ion_port}");
     if !wait_for_tcp(ion_port, Duration::from_secs(30)) {
         anyhow::bail!("ION did not start within 30 seconds on port {ion_port}");
     }
-    tracing::info!("single-ion-win: ION ready");
+    tracing::info!("single-ion-app: ION ready");
 
     let ion_url = format!("http://127.0.0.1:{ion_port}");
 
@@ -274,7 +323,6 @@ fn main() -> Result<()> {
         .build(&window)
         .context("create WebView")?;
 
-    // `run` never returns — process exits when ControlFlow::Exit is set.
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         if let Event::WindowEvent {
