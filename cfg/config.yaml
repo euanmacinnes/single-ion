@@ -102,3 +102,13 @@ dev_ftp:
   enabled: false
   addr: "0.0.0.0"
   port: 2121
+
+agent:
+  run_bootstrap: true    # create sql_dev workflow agents on first startup
+  query_token: ""        # leave empty — a UUID is auto-generated on first startup
+                         # and saved to <db_root>/.system/agent_query_token
+                         # override via REACTIVE__AGENT_QUERY_TOKEN to pin a specific value
+  planner_model: "qwen2.5-coder:7b"   # fast planning agent (fits in 6 GB VRAM)
+  writer_model:  "qwen2.5-coder:7b"   # SQL writer and corrector
+  embed_model:   "nomic-embed-text"   # query history embeddings (~274 MB)
+  ollama_url:    "http://127.0.0.1:11434"
