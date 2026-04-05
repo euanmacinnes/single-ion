@@ -111,4 +111,10 @@ agent:
   planner_model: "qwen2.5-coder:7b"   # fast planning agent (fits in 6 GB VRAM)
   writer_model:  "qwen2.5-coder:7b"   # SQL writer and corrector
   embed_model:   "nomic-embed-text"   # query history embeddings (~274 MB)
-  ollama_url:    "http://127.0.0.1:11434"
+  ollama_url:    "http://localhost:11434"
+  auto_pull:     true                   # automatically pull missing models from Ollama
+  ollama_vram_gb: 0                    # 0 = no limit; set to GPU VRAM in GB to constrain auto:* tier selection
+  model_tiers:                         # ranked preference lists for auto:* model resolution
+    text:      ["gemma3:4b", "gemma3:1b", "llama3.1:latest", "qwen2.5:7b"]
+    code:      ["qwen2.5-coder:7b", "deepseek-coder:latest", "codellama:latest", "gemma3:4b"]
+    embedding: ["nomic-embed-text", "all-minilm:latest"]
