@@ -8,15 +8,15 @@ name = "single-ion"
 path = "src/main.rs"
 
 [[bin]]
-name             = "single-ion-win"
-path             = "src/win.rs"
-required-features = ["windows-app"]
+name             = "single-ion-app"
+path             = "src/app.rs"
+required-features = ["desktop-app"]
 
 # ── Features ──────────────────────────────────────────────────────────────────
 [features]
 default      = []
 dev          = ["ion/dev"]
-windows-app  = ["dep:wry", "dep:tao"]
+desktop-app  = ["dep:wry", "dep:tao"]
 
 # ── Service libraries ──────────────────────────────────────────────────────────
 [dependencies]
@@ -32,8 +32,8 @@ anyhow             = "1"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# ── Windows app (WebView2 shell) — only pulled in with --features windows-app ──
-[target.'cfg(windows)'.dependencies]
+# ── Desktop app (WebView shell) — only pulled in with --features desktop-app ──
+# Windows: WebView2, Linux: WebKitGTK, macOS: WKWebView
 wry = { version = "0.46", optional = true }
 tao = { version = "0.30", optional = true }
 
