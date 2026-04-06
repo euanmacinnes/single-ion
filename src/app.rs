@@ -43,9 +43,10 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use tao::{
     dpi::LogicalSize,
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    keyboard::{KeyCode, ModifiersState},
+    window::{Fullscreen, WindowBuilder},
 };
 use tracing_subscriber::EnvFilter;
 use wry::WebViewBuilder;
@@ -323,13 +324,54 @@ fn main() -> Result<()> {
         .build(&window)
         .context("create WebView")?;
 
+    let mut modifiers = ModifiersState::empty();
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        if let Event::WindowEvent {
-            event: WindowEvent::CloseRequested, ..
-        } = event
-        {
-            *control_flow = ControlFlow::Exit;
+        if let Event::WindowEvent { event, .. } = event {
+            match event {
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                WindowEvent::ModifiersChanged(state) => {
+                    modifiers = state;
+                }
+                WindowEvent::KeyboardInput {
+                    event: KeyEvent { physical_key, state: ElementState::Pressed, .. },
+                    ..
+                } => match physical_key {
+                    // F11 — toggle borderless fullscreen
+                    KeyCode::F11 => {
+                        if window.fullscreen().is_some() {
+                            window.set_fullscreen(None);
+                        } else {
+                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                        }
+                    }
+                    // Escape — exit fullscreen only
+                    KeyCode::Escape => {
+                        if window.fullscreen().is_some() {
+                            window.set_fullscreen(None);
+                        }
+                    }
+                    // Alt+F4 — close window
+                    KeyCode::F4 if modifiers.alt_key() => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    // Ctrl+Q — quit (Linux convention)
+                    #[cfg(target_os = "linux")]
+                    KeyCode::KeyQ if modifiers.control_key() => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    // Ctrl+W — close window (Linux/GTK convention)
+                    #[cfg(target_os = "linux")]
+                    KeyCode::KeyW if modifiers.control_key() => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
         }
     });
 }
