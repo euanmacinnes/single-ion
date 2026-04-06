@@ -1556,6 +1556,7 @@ dependencies = [
  "ion_theme",
  "mlua",
  "notification",
+ "once_cell",
  "parking_lot",
  "password-hash",
  "pbkdf2",

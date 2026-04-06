@@ -7,6 +7,16 @@ server:
   # Path to ion's static assets — adjust if running from a different working directory.
   static_dir: ../ion/static
 
+auth:
+  session_secret: "change-me-in-production-please-use-64-or-more-random-bytes!!"
+  session_duration_hours: 12
+  local:
+    enabled: true
+  # OAuth2 providers are defined on the Reactive side (cfg/config.yaml → security.oauth2_providers)
+  # and surfaced to ION automatically via GET /auth/providers.
+  # You do NOT need to duplicate them here unless ION is managing the PKCE redirect itself.
+  oauth2: {}
+
 reactive:
   url: http://localhost:4749
 
