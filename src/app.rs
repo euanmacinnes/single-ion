@@ -228,13 +228,6 @@ fn main() -> Result<()> {
         std::env::set_var("REACTIVE__PGWIRE__PORT", pgwire_port.to_string());
         std::env::set_var("REACTIVE__GLUON__URL",
             format!("ws://127.0.0.1:{gluon_port}/ws"));
-        if std::env::var("REACTIVE__SECURITY__ADMIN_USER").is_err() {
-            std::env::set_var("REACTIVE__SECURITY__ADMIN_USER", "admin");
-        }
-        if std::env::var("REACTIVE__SECURITY__ADMIN_PASSWORD").is_err() {
-            std::env::set_var("REACTIVE__SECURITY__ADMIN_PASSWORD", "admin");
-        }
-
         // ION
         std::env::set_var("ION_SERVER__HOST", "127.0.0.1");
         std::env::set_var("ION_SERVER__PORT", ion_port.to_string());
