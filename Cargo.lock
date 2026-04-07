@@ -1437,7 +1437,7 @@ dependencies = [
  "lazy_static",
  "lru",
  "memmap2",
- "mlua",
+ "mlua 0.9.9",
  "once_cell",
  "parking_lot",
  "password-hash",
@@ -1554,7 +1554,7 @@ dependencies = [
  "hmac",
  "hnsw_rs",
  "ion_theme",
- "mlua",
+ "mlua 0.9.9",
  "notification",
  "once_cell",
  "parking_lot",
@@ -4946,6 +4946,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mlua"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1f5f8fbebc7db5f671671134b9321c4b9aa9adeafccfd9a8c020ae45c6a35d0"
+dependencies = [
+ "bstr",
+ "either",
+ "futures-util",
+ "mlua-sys",
+ "num-traits",
+ "parking_lot",
+ "rustc-hash",
+ "rustversion",
+]
+
+[[package]]
 name = "mlua-sys"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5071,6 +5087,7 @@ dependencies = [
  "kube",
  "minijinja",
  "notification",
+ "photon",
  "rcgen",
  "rustls",
  "rustls-pemfile",
@@ -5981,6 +5998,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher 1.0.2",
+]
+
+[[package]]
+name = "photon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gluon-service",
+ "mlua 0.10.5",
+ "polars",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "workbook",
 ]
 
 [[package]]
@@ -7876,6 +7911,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9067,6 +9108,7 @@ dependencies = [
  "getrandom 0.4.2",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
