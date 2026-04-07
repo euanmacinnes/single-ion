@@ -5089,6 +5089,7 @@ dependencies = [
  "notification",
  "photon",
  "rcgen",
+ "reqwest",
  "rustls",
  "rustls-pemfile",
  "secrecy",
@@ -6006,6 +6007,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "figment",
  "gluon-service",
  "mlua 0.10.5",
