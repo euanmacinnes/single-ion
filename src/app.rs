@@ -38,14 +38,14 @@
 )]
 
 use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tao::{
     dpi::LogicalSize,
-    event::{ElementState, Event, KeyEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::{KeyCode, ModifiersState},
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoopBuilder},
     window::{Fullscreen, WindowBuilder},
 };
 use tracing_subscriber::EnvFilter;
@@ -272,7 +272,9 @@ fn main() -> Result<()> {
                     Err(e) => { tracing::error!("ion config: {e:#}"); return; }
                 };
                 let gluon_config = gluon::config::Config::load().unwrap_or_default();
-                let neut_config  = neutrino::config::Config::load().unwrap_or_default();
+                let mut neut_config = neutrino::config::Config::load().unwrap_or_default();
+                neut_config.bind          = format!("127.0.0.1:{neutrino_port}");
+                neut_config.registry_host = format!("127.0.0.1:{neutrino_port}");
 
                 tracing::info!("single-ion-app: spawning services");
 
@@ -304,67 +306,83 @@ fn main() -> Result<()> {
     let ion_url = format!("http://127.0.0.1:{ion_port}");
 
     // ── 8. Run WebView window on the main thread ─────────────────────────────
-    let event_loop = EventLoop::new();
+    //
+    // All keyboard shortcuts are handled via JS+IPC rather than tao's
+    // WindowEvent::KeyboardInput, because the WebView captures keyboard focus
+    // entirely — tao never sees key events while the WebView is active.
+    //
+    // Keys that only affect window state (fullscreen/quit) are intercepted in
+    // the injected script and relayed as IPC messages.  An EventLoopProxy
+    // carries quit requests back to the event loop from the IPC handler thread.
+
+    #[derive(Debug)]
+    enum AppCmd { Quit }
+
+    let event_loop = EventLoopBuilder::<AppCmd>::with_user_event().build();
 
     let window = WindowBuilder::new()
         .with_title("single-ion")
         .with_inner_size(LogicalSize::new(1400_f64, 900_f64))
         .build(&event_loop)
         .context("create window")?;
+    let proxy = event_loop.create_proxy();
+    let window_ref = Arc::new(window);
+    let window_ipc = Arc::clone(&window_ref);
 
     let _webview = WebViewBuilder::new()
         .with_url(&ion_url)
-        .build(&window)
+        .with_initialization_script(
+            r#"
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'F11') {
+                    // Toggle OS-level fullscreen; prevent browser's own handling.
+                    e.preventDefault();
+                    window.ipc.postMessage('toggle-fullscreen');
+                } else if (e.key === 'Escape') {
+                    // Exit fullscreen if active; don't prevent default so web
+                    // content (dialogs, etc.) can still use Escape normally.
+                    window.ipc.postMessage('escape');
+                } else if ((e.key === 'q' || e.key === 'w') && e.ctrlKey) {
+                    // Ctrl+Q / Ctrl+W — quit (Linux/GTK convention).
+                    e.preventDefault();
+                    window.ipc.postMessage('quit');
+                }
+            }, true);
+            "#,
+        )
+        .with_ipc_handler(move |msg| match msg.body().as_str() {
+            "toggle-fullscreen" => {
+                if window_ipc.fullscreen().is_some() {
+                    window_ipc.set_fullscreen(None);
+                } else {
+                    window_ipc.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                }
+            }
+            "escape" => {
+                if window_ipc.fullscreen().is_some() {
+                    window_ipc.set_fullscreen(None);
+                }
+            }
+            "quit" => {
+                let _ = proxy.send_event(AppCmd::Quit);
+            }
+            _ => {}
+        })
+        .build(&*window_ref)
         .context("create WebView")?;
-
-    let mut modifiers = ModifiersState::empty();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
-                WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                WindowEvent::ModifiersChanged(state) => {
-                    modifiers = state;
-                }
-                WindowEvent::KeyboardInput {
-                    event: KeyEvent { physical_key, state: ElementState::Pressed, .. },
-                    ..
-                } => match physical_key {
-                    // F11 — toggle borderless fullscreen
-                    KeyCode::F11 => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        } else {
-                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-                        }
-                    }
-                    // Escape — exit fullscreen only
-                    KeyCode::Escape => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        }
-                    }
-                    // Alt+F4 — close window
-                    KeyCode::F4 if modifiers.alt_key() => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    // Ctrl+Q — quit (Linux convention)
-                    #[cfg(target_os = "linux")]
-                    KeyCode::KeyQ if modifiers.control_key() => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    // Ctrl+W — close window (Linux/GTK convention)
-                    #[cfg(target_os = "linux")]
-                    KeyCode::KeyW if modifiers.control_key() => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    _ => {}
-                },
-                _ => {}
+        match event {
+            // Window close button, or Alt+F4 on Windows (handled at OS level).
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                *control_flow = ControlFlow::Exit;
             }
+            // Quit request relayed from the IPC handler (Ctrl+Q / Ctrl+W).
+            Event::UserEvent(AppCmd::Quit) => {
+                *control_flow = ControlFlow::Exit;
+            }
+            _ => {}
         }
     });
 }
