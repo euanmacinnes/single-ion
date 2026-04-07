@@ -6005,6 +6005,8 @@ name = "photon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "figment",
  "gluon-service",
  "mlua 0.10.5",
  "polars",
@@ -6013,7 +6015,9 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tower-http",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "workbook",
 ]
