@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(grep -A 20 '\"\"newtab\"\"' static/i18n/en.json)",
+      "Bash(powershell -Command \":*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)"
+    ]
+  }
+}

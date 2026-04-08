@@ -29,6 +29,50 @@ security:
   admin_user: null           # set via REACTIVE__SECURITY__ADMIN_USER
   admin_password: null       # set via REACTIVE__SECURITY__ADMIN_PASSWORD
   dev_insecure: false
+  service_token: ""          # bearer token for internal service callers; empty = disabled
+
+  # OAuth2 / OIDC providers — defined here so secrets never touch the DB.
+  # Synced into security.oauth2_providers on startup (ON CONFLICT DO NOTHING).
+  # On first install with no admin user, Reactive enters bootstrap mode and
+  # the /setup page is shown.  The first login (local or SSO) becomes admin.
+  #
+  # Example: Google OAuth2
+  # Register at https://console.cloud.google.com/apis/credentials
+  # Authorised redirect URI:  http://localhost:8080/auth/callback/google
+  #
+  # oauth2_providers:
+  #   - provider_id: google
+  #     display_name: Google
+  #     client_id: "123456789-abc.apps.googleusercontent.com"
+  #     client_secret: "GOCSPX-your-client-secret"
+  #     auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+  #     token_url: "https://oauth2.googleapis.com/token"
+  #     redirect_uri: "http://localhost:8080/auth/callback/google"
+  #     scopes: "openid profile email"
+  #     pkce_enabled: true
+  #     icon_url: "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+  #
+  # Environment variable equivalent:
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__PROVIDER_ID=google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__DISPLAY_NAME=Google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__CLIENT_ID=123456789-abc.apps.googleusercontent.com
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__CLIENT_SECRET=GOCSPX-your-client-secret
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__AUTH_URL=https://accounts.google.com/o/oauth2/v2/auth
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__TOKEN_URL=https://oauth2.googleapis.com/token
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__REDIRECT_URI=http://localhost:8080/auth/callback/google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__SCOPES=openid profile email
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__PKCE_ENABLED=true
+  oauth2_providers:
+    - provider_id: google
+      display_name: Google
+      client_id: "your-client-id.apps.googleusercontent.com"
+      client_secret: "GOCSPX-your-client-secret"
+      auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+      token_url: "https://oauth2.googleapis.com/token"
+      redirect_uri: "http://localhost:8080/auth/callback/google"
+      scopes: "openid profile email"
+      pkce_enabled: true
+      icon_url: "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
 
 paths:
   db_root: dbs

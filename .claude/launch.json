@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "setup-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "7780", "--directory", "../reactive/crates/db_server/static"],
+      "port": 7780
+    },
+    {
+      "name": "single-ion",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "--bin", "single-ion"],
+      "port": 8080
+    }
+  ]
+}
