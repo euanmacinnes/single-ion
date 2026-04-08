@@ -2,3 +2,4 @@
 /dbs
 /environments/*.json
 builds
+Cargo.lock
