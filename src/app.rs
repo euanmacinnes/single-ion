@@ -238,6 +238,10 @@ fn main() -> Result<()> {
 
         // Neutrino
         std::env::set_var("NEUTRINO_BIND", format!("127.0.0.1:{neutrino_port}"));
+        // Also inform ION of the actual Neutrino URL so the UI and backend
+        // use the correct ephemeral port instead of the default :4748.
+        std::env::set_var("ION_NEUTRINO__URL",
+            format!("http://127.0.0.1:{neutrino_port}"));
     }
 
     // Release reserved ports.
