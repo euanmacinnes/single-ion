@@ -18,7 +18,38 @@ auth:
   oauth2: {}
 
 reactive:
-  url: http://localhost:4749
+  # Use 127.0.0.1 literal instead of `localhost` to bypass Windows DNS
+  # resolution on every fresh TCP connection. With pool_max_idle_per_host=0
+  # (see below) every reqwest call opens a new connection, and resolving
+  # `localhost` on Windows goes through the DNS client service + dual-stack
+  # Happy Eyeballs, which can cost 200–300 ms per lookup on some setups.
+  # Using the literal IPv4 address eliminates that cost entirely.
+  url: http://127.0.0.1:4749
+  # ── Loopback HTTP client tuning ───────────────────────────────────────────
+  # single-ion runs ION and Reactive in the same process over loopback.
+  # Disable connection pooling entirely here:
+  #   - On loopback the TCP handshake is sub-millisecond, so pooling saves
+  #     approximately nothing.
+  #   - Pooling on Windows loopback has been observed to produce 3–5 s stalls
+  #     when a pool entry goes half-dead between uses (traces
+  #     872558a0-... and deb6b0a7-... on 2026-04-09).
+  # Setting `http_pool_max_idle_per_host: 0` forces a fresh TCP connection
+  # per request, eliminating the stall class by construction.
+  #
+  # Production deployments of ION over a real network should leave these at
+  # their defaults (see ion/crates/config/src/lib.rs::ReactiveConfig):
+  #   http_pool_max_idle_per_host: 4   (pool enabled)
+  #   http_pool_idle_timeout_secs: 5   (aggressive eviction)
+  #   http_tcp_keepalive_secs:     2   (fast dead-peer detection)
+  http_pool_max_idle_per_host: 0
+
+  # Must match `security.service_token` in single-ion/cfg/config.yaml.
+  # When set, `record_recent` and other KV callers take the fast single-
+  # REST path (one atomic `POST /_kv/...`) instead of two SQL round-trips
+  # (`READ KEY` + `WRITE KEY`), halving the background `/query` pressure
+  # that `htmx_navigate` generates on every folder navigate under the
+  # shared single-ion tokio runtime.
+  service_token: "single-ion-dev-token"
 
 gluon:
   enabled: true

@@ -29,7 +29,14 @@ security:
   admin_user: null           # set via REACTIVE__SECURITY__ADMIN_USER
   admin_password: null       # set via REACTIVE__SECURITY__ADMIN_PASSWORD
   dev_insecure: false
-  service_token: ""          # bearer token for internal service callers; empty = disabled
+  # Dev-only loopback service token. Enables the fast single-REST KV path
+  # for `record_recent` and other internal callers, bypassing SQL parsing
+  # and session validation. Not a security concern in single-ion because
+  # there is no network boundary — everything is one process on loopback —
+  # but the ION side (`single-ion/cfg/ion.yaml → reactive.service_token`)
+  # must match this value verbatim. For any real deployment, replace with
+  # a fresh random value (e.g. `openssl rand -base64 32`).
+  service_token: "single-ion-dev-token"
 
   # OAuth2 / OIDC providers — defined here so secrets never touch the DB.
   # Synced into security.oauth2_providers on startup (ON CONFLICT DO NOTHING).
