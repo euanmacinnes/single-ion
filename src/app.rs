@@ -265,7 +265,7 @@ fn main() -> Result<()> {
         .build()
         .context("tokio runtime")?;
 
-    std::thread::Builder::new()
+    let services_handle = std::thread::Builder::new()
         .name("services".into())
         .spawn(move || {
             rt.block_on(async {
@@ -290,11 +290,31 @@ fn main() -> Result<()> {
                 let i = tokio::spawn(ion::run(ion_config));
                 let n = tokio::spawn(neutrino::run(neut_config));
 
-                tokio::select! {
-                    res = g => tracing::error!("gluon exited: {res:?}"),
-                    res = r => tracing::error!("reactive exited: {res:?}"),
-                    res = i => tracing::error!("ion exited: {res:?}"),
-                    res = n => tracing::error!("neutrino exited: {res:?}"),
+                // Wait for Reactive to install the global shutdown channel
+                // (happens early in db_core::startup::init), then block until
+                // the event loop fires the signal on window close.
+                let mut shutdown_rx = None;
+                for _ in 0..20 {
+                    if let Some(rx) = db_configs::shutdown::get_shutdown_rx_clone() {
+                        shutdown_rx = Some(rx);
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                if let Some(mut rx) = shutdown_rx {
+                    let _ = rx.changed().await;
+                    tracing::info!("single-ion-app: shutdown signal received, allowing services to flush");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                } else {
+                    // Fallback: channel never appeared — wait for any service
+                    // to exit (original behaviour).
+                    tracing::warn!("single-ion-app: shutdown channel not available, using select fallback");
+                    tokio::select! {
+                        res = g => tracing::error!("gluon exited: {res:?}"),
+                        res = r => tracing::error!("reactive exited: {res:?}"),
+                        res = i => tracing::error!("ion exited: {res:?}"),
+                        res = n => tracing::error!("neutrino exited: {res:?}"),
+                    }
                 }
             });
         })
@@ -385,6 +405,20 @@ fn main() -> Result<()> {
             // Quit request relayed from the IPC handler (Ctrl+Q / Ctrl+W).
             Event::UserEvent(AppCmd::Quit) => {
                 *control_flow = ControlFlow::Exit;
+            }
+            Event::LoopDestroyed => {
+                // ── Graceful shutdown ────────────────────────────────────
+                // Signal all services to stop accepting work and flush
+                // in-flight writes (delta logs, WAL, KV) before the
+                // process exits.
+                tracing::info!("single-ion-app: window closed, signalling graceful shutdown");
+                if let Some(tx) = db_configs::shutdown::get_shutdown_tx() {
+                    let _ = tx.send(true);
+                }
+                // Give the services thread time to flush, then join it so
+                // the Tokio runtime drops cleanly.
+                let _ = services_handle.join();
+                tracing::info!("single-ion-app: services stopped, exiting");
             }
             _ => {}
         }

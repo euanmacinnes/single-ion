@@ -45,35 +45,45 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::new(filter))
         .try_init();
 
-    // Point reactive at the shared scripts directory.  This single variable drives UDF
-    // discovery, the DDL installer fallback, and system-view loading — all via
-    // find_global_scripts_root() in reactive's system_paths crate.
-    // Can be overridden externally with REACTIVE_SCRIPTS_ROOT=<path>.
-    if std::env::var("REACTIVE_SCRIPTS_ROOT").is_err() {
-        // SAFETY: called before any tasks are spawned, so no concurrent env reads.
-        unsafe { std::env::set_var("REACTIVE_SCRIPTS_ROOT", "../reactive/scripts"); }
+    // Resolve the monorepo root via exe-path traversal so that dev paths work regardless
+    // of which directory cargo run is invoked from.  The exe is always inside a `target/`
+    // subtree during development; its parent is the monorepo root (freeradicals/).
+    // In a distributed build the assets are embedded, so these env vars are unused.
+    let monorepo_root: Option<std::path::PathBuf> = std::env::current_exe().ok().and_then(|exe| {
+        exe.ancestors()
+            .find(|p| p.file_name().map(|n| n == "target").unwrap_or(false))
+            .and_then(|t| t.parent())
+            .map(|p| p.to_path_buf())
+    });
+
+    // Helper: set an env var to an absolute monorepo-relative path if not already set.
+    // Falls back to the CWD-relative path (original behaviour) if exe traversal failed.
+    macro_rules! set_path {
+        ($var:expr, $rel:expr, $fallback:expr) => {
+            if std::env::var($var).is_err() {
+                let val = monorepo_root
+                    .as_ref()
+                    .map(|r| r.join($rel).to_string_lossy().into_owned())
+                    .unwrap_or_else(|| $fallback.to_string());
+                // SAFETY: called before any tasks are spawned, so no concurrent env reads.
+                unsafe { std::env::set_var($var, val); }
+            }
+        };
     }
 
-    // Point each service at its own static assets directory so the /admin pages load
-    // correctly when running from the single-ion/ working directory.
-    // Each var can be overridden externally (e.g. for Docker deployments).
-    if std::env::var("REACTIVE_STATIC_DIR").is_err() {
-        unsafe { std::env::set_var("REACTIVE_STATIC_DIR", "../reactive/crates/db_server/static"); }
-    }
-    if std::env::var("GLUON_STATIC_DIR").is_err() {
-        unsafe { std::env::set_var("GLUON_STATIC_DIR", "../gluon/static"); }
-    }
-    if std::env::var("NEUTRINO_STATIC_DIR").is_err() {
-        unsafe { std::env::set_var("NEUTRINO_STATIC_DIR", "../neutrino/static"); }
-    }
-    // The monorepo root is needed to build neutrino-base-standard from source
-    // (the cargo-chef Dockerfile COPYs neutrino/, crates/, gluon/ from there).
-    // single-ion runs from single-ion/, so ".." is the monorepo root.
+    set_path!("REACTIVE_SCRIPTS_ROOT",    "reactive/scripts",                    "../reactive/scripts");
+    set_path!("REACTIVE_STATIC_DIR",      "reactive/crates/db_server/static",    "../reactive/crates/db_server/static");
+    set_path!("GLUON_STATIC_DIR",         "gluon/static",                        "../gluon/static");
+    set_path!("NEUTRINO_STATIC_DIR",      "neutrino/static",                     "../neutrino/static");
+    set_path!("ION_SERVER__STATIC_DIR",   "ion/static",                          "../ion/static");
+
+    // The monorepo root is needed to build neutrino-base-standard from source.
     if std::env::var("NEUTRINO_BUILD_CONTEXT_DIR").is_err() {
-        unsafe { std::env::set_var("NEUTRINO_BUILD_CONTEXT_DIR", ".."); }
-    }
-    if std::env::var("ION_SERVER__STATIC_DIR").is_err() {
-        unsafe { std::env::set_var("ION_SERVER__STATIC_DIR", "../ion/static"); }
+        let val = monorepo_root
+            .as_ref()
+            .map(|r| r.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "..".to_string());
+        unsafe { std::env::set_var("NEUTRINO_BUILD_CONTEXT_DIR", val); }
     }
 
     tracing::info!("single-ion: loading service configs");
