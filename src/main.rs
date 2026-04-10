@@ -23,6 +23,7 @@
 //! e.g. FR_LOG=debug or FR_LOG=ion=debug,reactive=info.
 
 use anyhow::Result;
+use std::time::Duration;
 use tokio::task::JoinError;
 use tracing_subscriber::EnvFilter;
 
@@ -105,43 +106,26 @@ async fn main() -> Result<()> {
     let i = tokio::spawn(ion::run(ion_config));
     let n = tokio::spawn(neutrino::run(neut_config));
 
-    tokio::select! {
+    let exit_reason = tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            tracing::info!("single-ion: shutdown signal received — exiting");
+            "ctrl-c".to_string()
         }
-        res = g => {
-            let reason = format_exit("gluon", res);
-            eprintln!("\n\x1b[1;31m╔══════════════════════════════════════════════════════╗");
-            eprintln!("║  single-ion: PROCESS EXITING                         ║");
-            eprintln!("║  Service: gluon                                       ║");
-            eprintln!("║  {:<53}║", reason);
-            eprintln!("╚══════════════════════════════════════════════════════╝\x1b[0m\n");
-        }
-        res = r => {
-            let reason = format_exit("reactive", res);
-            eprintln!("\n\x1b[1;31m╔══════════════════════════════════════════════════════╗");
-            eprintln!("║  single-ion: PROCESS EXITING                         ║");
-            eprintln!("║  Service: reactive                                    ║");
-            eprintln!("║  {:<53}║", reason);
-            eprintln!("╚══════════════════════════════════════════════════════╝\x1b[0m\n");
-        }
-        res = i => {
-            let reason = format_exit("ion", res);
-            eprintln!("\n\x1b[1;31m╔══════════════════════════════════════════════════════╗");
-            eprintln!("║  single-ion: PROCESS EXITING                         ║");
-            eprintln!("║  Service: ion                                         ║");
-            eprintln!("║  {:<53}║", reason);
-            eprintln!("╚══════════════════════════════════════════════════════╝\x1b[0m\n");
-        }
-        res = n => {
-            let reason = format_exit("neutrino", res);
-            eprintln!("\n\x1b[1;31m╔══════════════════════════════════════════════════════╗");
-            eprintln!("║  single-ion: PROCESS EXITING                         ║");
-            eprintln!("║  Service: neutrino                                    ║");
-            eprintln!("║  {:<53}║", reason);
-            eprintln!("╚══════════════════════════════════════════════════════╝\x1b[0m\n");
-        }
+        res = g => format_exit("gluon", res),
+        res = r => format_exit("reactive", res),
+        res = i => format_exit("ion", res),
+        res = n => format_exit("neutrino", res),
+    };
+
+    // ── Graceful shutdown ────────────────────────────────────────────────
+    // Signal all services to flush in-flight writes (delta logs, WAL, KV)
+    // before the Tokio runtime drops and kills outstanding tasks.
+    tracing::info!("single-ion: shutting down ({exit_reason})");
+    if let Some(tx) = db_configs::shutdown::get_shutdown_tx() {
+        let _ = tx.send(true);
     }
+    // Give services time to finish flushing.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    tracing::info!("single-ion: shutdown complete");
 
     Ok(())
 }
