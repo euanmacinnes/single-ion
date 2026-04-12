@@ -265,7 +265,7 @@ fn main() -> Result<()> {
         .build()
         .context("tokio runtime")?;
 
-    let services_handle = std::thread::Builder::new()
+    let mut services_handle = Some(std::thread::Builder::new()
         .name("services".into())
         .spawn(move || {
             rt.block_on(async {
@@ -318,7 +318,7 @@ fn main() -> Result<()> {
                 }
             });
         })
-        .context("spawn services thread")?;
+        .context("spawn services thread")?);
 
     // ── 7. Wait for ION to accept connections ────────────────────────────────
     tracing::info!("single-ion-app: waiting for ION on port {ion_port}");
@@ -417,7 +417,9 @@ fn main() -> Result<()> {
                 }
                 // Give the services thread time to flush, then join it so
                 // the Tokio runtime drops cleanly.
-                let _ = services_handle.join();
+                if let Some(h) = services_handle.take() {
+                    let _ = h.join();
+                }
                 tracing::info!("single-ion-app: services stopped, exiting");
             }
             _ => {}
