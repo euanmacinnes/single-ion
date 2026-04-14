@@ -3,3 +3,4 @@
 /environments/*.json
 builds
 Cargo.lock
+/files/environments/*.json
