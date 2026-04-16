@@ -111,6 +111,28 @@ async fn main() -> Result<()> {
     // Load all configs before spawning so a bad config fails fast and clean.
     let ion_config   = ion_config::load()?;
     let gluon_config = gluon::config::Config::load().unwrap_or_default();
+
+    // Inject the actual Gluon WebSocket URL (derived from gluon's bind address)
+    // as env vars so neutrino's config loader picks them up via Figment's Env
+    // layer.  This ensures neutrino always connects to the same Gluon instance
+    // that single-ion started, regardless of what cfg/neutrino.yaml says.
+    {
+        let gluon_ws_url = {
+            let bind = &gluon_config.bind;
+            // Replace 0.0.0.0 with 127.0.0.1 for loopback connections.
+            let addr = bind.replace("0.0.0.0", "127.0.0.1");
+            format!("ws://{addr}/ws")
+        };
+        unsafe {
+            if std::env::var("NEUTRINO_GLUON__INTERNAL_URL").is_err() {
+                std::env::set_var("NEUTRINO_GLUON__INTERNAL_URL", &gluon_ws_url);
+            }
+            if std::env::var("NEUTRINO_PHOTON__GLUON_URL").is_err() {
+                std::env::set_var("NEUTRINO_PHOTON__GLUON_URL", &gluon_ws_url);
+            }
+        }
+    }
+
     let neut_config  = neutrino::config::Config::load().unwrap_or_default();
     // Reactive config is loaded inside db_server::run() via db_configs::init_global().
 

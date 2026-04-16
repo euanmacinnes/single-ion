@@ -6,7 +6,9 @@ bind: "0.0.0.0:4748"
 templates_dir: ../neutrino/templates
 namespace: default
 
-# Enable Gluon for inter-kernel communication and telemetry
+# Enable Gluon for inter-kernel communication and telemetry.
+# The actual Gluon WebSocket URL is injected at runtime by single-ion/main.rs
+# via NEUTRINO_GLUON__INTERNAL_URL (derived from gluon.bind), so no hardcoded
+# URL is needed here.
 gluon:
   enabled: true
-  internal_url: "ws://localhost:4747/ws"

@@ -238,6 +238,12 @@ fn main() -> Result<()> {
 
         // Neutrino
         std::env::set_var("NEUTRINO_BIND", format!("127.0.0.1:{neutrino_port}"));
+        std::env::set_var("NEUTRINO_GLUON__INTERNAL_URL",
+            format!("ws://127.0.0.1:{gluon_port}/ws"));
+        std::env::set_var("NEUTRINO_PHOTON__GLUON_URL",
+            format!("ws://127.0.0.1:{gluon_port}/ws"));
+        std::env::set_var("NEUTRINO_PHOTON__REACTIVE_URL",
+            format!("http://127.0.0.1:{reactive_port}"));
         // Also inform ION of the actual Neutrino URL so the UI and backend
         // use the correct ephemeral port instead of the default :4748.
         std::env::set_var("ION_NEUTRINO__URL",
