@@ -8,13 +8,18 @@
 //!
 //! Configuration
 //! -------------
-//! Each service reads its config from the usual locations relative to the
-//! process working directory:
+//! On startup the process changes its working directory to the `single-ion/`
+//! subdirectory of the monorepo root (resolved via the exe path).  This means
+//! every service's config loader finds its file at the standard CWD-relative
+//! path:
 //!
 //!   cfg/config.yaml      → reactive
 //!   cfg/ion.yaml         → ion
 //!   cfg/gluon.yaml       → gluon
 //!   cfg/neutrino.yaml    → neutrino
+//!
+//! Static-asset and script paths are set as absolute env vars before the CWD
+//! change takes effect, so they are unaffected.
 //!
 //! All per-service environment variable overrides (REACTIVE__*, ION_*,
 //! GLUON_*, NEUTRINO_*) continue to work as normal.
@@ -70,6 +75,20 @@ async fn main() -> Result<()> {
                 unsafe { std::env::set_var($var, val); }
             }
         };
+    }
+
+    // Change CWD to the single-ion/ subdirectory so that every service's
+    // config loader finds its `cfg/*.yaml` file via the standard CWD-relative
+    // path (e.g. `cfg/config.yaml`, `cfg/ion.yaml`, …).  This must happen
+    // before any config is loaded and before the set_path! calls below, which
+    // use absolute paths and are therefore unaffected by the CWD change.
+    if let Some(ref root) = monorepo_root {
+        let single_ion_dir = root.join("single-ion");
+        if single_ion_dir.is_dir() {
+            std::env::set_current_dir(&single_ion_dir).unwrap_or_else(|e| {
+                tracing::warn!("could not chdir to single-ion/: {e}");
+            });
+        }
     }
 
     set_path!("REACTIVE_SCRIPTS_ROOT",    "reactive/scripts",                    "../reactive/scripts");
