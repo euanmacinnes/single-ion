@@ -1,0 +1,158 @@
+# neutrino-base — Neutrino binary image for self-distribution
+#
+# Builds neutrino and ncli binaries using cargo-chef for dependency caching.
+# Used when Neutrino needs to spin up additional Neutrino instances on Kubernetes.
+#
+# Build from the monorepo root:
+#   docker build -f neutrino/files/base/Dockerfile.neutrino-base -t neutrino-base:latest .
+#
+# Monorepo layout used by this build:
+#   neutrino/
+#     crates/neutrino/   ← main binary
+#     crates/ncli/       ← CLI binary
+#   crates/
+#     workbook/          ← path dep
+#     gluon-service/     ← path dep
+#     gluon-client/      ← path dep of gluon-service
+#     ion_theme/         ← path dep
+#     notification/      ← path dep
+#     photon/            ← path dep
+#     transfer/          ← path dep
+#     auto_ml/           ← path dep
+
+# ── Stage 1: chef ─────────────────────────────────────────────────────────────
+FROM rust:1.92-slim-bookworm AS chef
+LABEL authors="Free Radicals"
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && cargo install cargo-chef --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/neutrino/Cargo.toml          neutrino/crates/neutrino/Cargo.toml
+COPY neutrino/crates/ncli/Cargo.toml              neutrino/crates/ncli/Cargo.toml
+COPY crates/workbook/Cargo.toml                   crates/workbook/Cargo.toml
+COPY crates/gluon-service/Cargo.toml              crates/gluon-service/Cargo.toml
+COPY crates/gluon-client/Cargo.toml               crates/gluon-client/Cargo.toml
+COPY crates/ion_theme/Cargo.toml                  crates/ion_theme/Cargo.toml
+COPY crates/notification/Cargo.toml               crates/notification/Cargo.toml
+COPY crates/photon/Cargo.toml                     crates/photon/Cargo.toml
+COPY crates/transfer/Cargo.toml                   crates/transfer/Cargo.toml
+COPY crates/auto_ml/Cargo.toml                    crates/auto_ml/Cargo.toml
+
+WORKDIR /app/neutrino
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ── Stage 2: cook ─────────────────────────────────────────────────────────────
+FROM rust:1.92-slim-bookworm AS cook
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && cargo install cargo-chef --locked \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=chef /app/neutrino/recipe.json neutrino/recipe.json
+
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/neutrino/Cargo.toml          neutrino/crates/neutrino/Cargo.toml
+COPY neutrino/crates/ncli/Cargo.toml              neutrino/crates/ncli/Cargo.toml
+COPY crates/workbook/Cargo.toml                   crates/workbook/Cargo.toml
+COPY crates/gluon-service/Cargo.toml              crates/gluon-service/Cargo.toml
+COPY crates/gluon-client/Cargo.toml               crates/gluon-client/Cargo.toml
+COPY crates/ion_theme/Cargo.toml                  crates/ion_theme/Cargo.toml
+COPY crates/notification/Cargo.toml               crates/notification/Cargo.toml
+COPY crates/photon/Cargo.toml                     crates/photon/Cargo.toml
+COPY crates/transfer/Cargo.toml                   crates/transfer/Cargo.toml
+COPY crates/auto_ml/Cargo.toml                    crates/auto_ml/Cargo.toml
+
+RUN mkdir -p crates/workbook/src \
+ && touch crates/workbook/src/lib.rs \
+ && mkdir -p crates/gluon-service/src \
+ && touch crates/gluon-service/src/lib.rs \
+ && mkdir -p crates/gluon-client/src \
+ && touch crates/gluon-client/src/lib.rs \
+ && mkdir -p crates/ion_theme/src \
+ && touch crates/ion_theme/src/lib.rs \
+ && mkdir -p crates/notification/src \
+ && touch crates/notification/src/lib.rs \
+ && mkdir -p crates/photon/src/bin \
+ && touch crates/photon/src/lib.rs \
+ && echo "fn main(){}" > crates/photon/src/bin/kernel_manager.rs \
+ && mkdir -p crates/transfer/src \
+ && touch crates/transfer/src/lib.rs \
+ && mkdir -p crates/auto_ml/src \
+ && touch crates/auto_ml/src/lib.rs
+
+WORKDIR /app/neutrino
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# ── Stage 3: build ────────────────────────────────────────────────────────────
+FROM rust:1.92-slim-bookworm AS build
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       pkg-config \
+       libssl-dev \
+       ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=cook /app/neutrino/target             neutrino/target
+
+COPY neutrino/Cargo.toml                          neutrino/Cargo.toml
+COPY neutrino/Cargo.lock                          neutrino/Cargo.lock
+COPY neutrino/crates/                             neutrino/crates/
+COPY neutrino/files/base/                         neutrino/files/base/
+COPY neutrino/static/                             neutrino/static/
+COPY crates/workbook/                             crates/workbook/
+COPY crates/gluon-service/                        crates/gluon-service/
+COPY crates/gluon-client/                         crates/gluon-client/
+COPY crates/ion_theme/                            crates/ion_theme/
+COPY crates/notification/                         crates/notification/
+COPY crates/photon/                               crates/photon/
+COPY crates/transfer/                             crates/transfer/
+COPY crates/auto_ml/                              crates/auto_ml/
+
+RUN find /app/crates -name "*.rs" | xargs touch 2>/dev/null || true
+
+WORKDIR /app/neutrino
+RUN cargo build --release --bin neutrino --bin ncli
+
+# ── Stage 4: runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libssl3 \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/neutrino
+
+COPY --from=build /app/neutrino/target/release/neutrino /usr/local/bin/neutrino
+COPY --from=build /app/neutrino/target/release/ncli     /usr/local/bin/ncli
+
+COPY neutrino/static/ ./static/
+
+VOLUME ["/opt/neutrino/cfg", "/opt/neutrino/data"]
+
+ENV NEUTRINO_BIND=0.0.0.0:4748
+
+EXPOSE 4748
+
+ENTRYPOINT ["/usr/local/bin/neutrino"]
+CMD []

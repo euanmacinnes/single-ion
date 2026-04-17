@@ -1,0 +1,44 @@
+# photon-base-mamba3.13 — Photon kernel image with Miniforge (mamba) + Python 3.13 + CUDA 12.8
+#
+# CUDA base: nvidia/cuda:12.8.1-base-ubuntu24.04
+# Conda distribution: Miniforge3 (mamba + conda-forge channel by default)
+# Python: 3.13 via mamba
+#
+# Build from the monorepo root (photon-base must be built first):
+#   docker build \
+#     --build-arg BASE_IMAGE=photon-base:latest \
+#     -f neutrino/files/base/Dockerfile.photon-base-mamba3.13 \
+#     -t photon-base-mamba3.13:latest .
+
+ARG BASE_IMAGE=photon-base:latest
+FROM ${BASE_IMAGE} AS photon
+
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       curl \
+       libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Miniforge3 (mamba + conda-forge)
+RUN curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+    -o /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+
+ENV PATH=/opt/conda/bin:$PATH
+
+# Create Python 3.13 environment
+RUN mamba install -y python=3.13 \
+    && mamba clean -afy
+
+COPY --from=photon /usr/local/bin/kernel-manager /usr/local/bin/kernel-manager
+
+EXPOSE 8090
+
+ENTRYPOINT ["/usr/local/bin/kernel-manager"]
+CMD []
