@@ -53,4 +53,7 @@ reactive:
 
 gluon:
   enabled: true
-  url: ws://localhost:4747/ws
+  # Use 127.0.0.1 explicitly — on Windows 10, "localhost" can resolve to ::1
+  # (IPv6) first, but Gluon binds 0.0.0.0 (IPv4 only), so the WS connect fails
+  # and the status indicator never turns green.
+  url: ws://127.0.0.1:4747/ws

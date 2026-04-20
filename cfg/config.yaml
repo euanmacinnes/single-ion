@@ -147,7 +147,8 @@ autotune:
 
 gluon:
   enabled: true
-  url: "ws://localhost:4747/ws"
+  # Use 127.0.0.1 — see comment in single-ion/cfg/ion.yaml (Win10 IPv6 quirk).
+  url: "ws://127.0.0.1:4747/ws"
 
 dev_ftp:
   enabled: false
