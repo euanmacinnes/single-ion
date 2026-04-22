@@ -155,6 +155,10 @@ dev_ftp:
   addr: "0.0.0.0"
   port: 2121
 
+fixture:
+  beverage: true   # Signature Beverage demo (tasks/threads/entries)
+  f1: true         # SX-2201 pharmaceutical demo
+
 agent:
   run_bootstrap: true    # create sql_dev workflow agents on first startup
   query_token: ""        # leave empty — a UUID is auto-generated on first startup

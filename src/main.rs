@@ -32,6 +32,38 @@ use std::time::Duration;
 use tokio::task::JoinError;
 use tracing_subscriber::EnvFilter;
 
+/// All files under the `cfg/` tree embedded at compile time (always, including debug builds).
+/// On startup, any cfg file that does not exist on disk is written from this embedded copy.
+/// Files that already exist are left untouched so that operator customisations survive restarts.
+/// Environment variables and command-line args are applied on top by each service's own loader.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "cfg/"]
+struct CfgFiles;
+
+/// Write any embedded cfg file that is absent from `cfg/` relative to the current working
+/// directory.  Existing files are never overwritten.
+fn ensure_cfg_files() {
+    let cfg_dir = std::path::Path::new("cfg");
+    for filename in CfgFiles::iter() {
+        let dest = cfg_dir.join(filename.as_ref());
+        if dest.exists() {
+            continue;
+        }
+        let content = CfgFiles::get(&filename).expect("RustEmbed iter/get are always consistent");
+        if let Some(parent) = dest.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!("single-ion: could not create cfg dir {}: {e}", parent.display());
+                continue;
+            }
+        }
+        if let Err(e) = std::fs::write(&dest, content.data.as_ref()) {
+            tracing::warn!("single-ion: could not write embedded cfg {}: {e}", dest.display());
+        } else {
+            tracing::info!("single-ion: extracted embedded cfg/{filename}");
+        }
+    }
+}
+
 fn format_exit(service: &str, res: Result<Result<()>, JoinError>) -> String {
     match res {
         Err(e) if e.is_panic() => format!("{service} panicked: {e}"),
@@ -79,12 +111,13 @@ async fn main() -> Result<()> {
             .map(|p| p.to_path_buf())
     });
 
-    // Case 2: portable deployment (exe-adjacent cfg/).
+    // Case 2: portable deployment — runtime state lives under an `ion/` subdirectory
+    // alongside the exe, keeping cfg/, dbs/, and extracted scripts out of the binary's
+    // own directory.  The subdirectory is created automatically on first run.
     let deployment_root: Option<std::path::PathBuf> = if monorepo_root.is_none() {
         exe_path.as_ref()
             .and_then(|exe| exe.parent())
-            .map(|p| p.to_path_buf())
-            .filter(|d| d.join("cfg").is_dir())
+            .map(|p| p.join("ion"))
     } else {
         None
     };
@@ -109,25 +142,35 @@ async fn main() -> Result<()> {
 
     // Change CWD so that every service's config loader finds its `cfg/*.yaml`
     // file at the standard CWD-relative path.  Must happen before config is
-    // loaded; the set_path! calls above use absolute paths and are unaffected.
+    // loaded; the set_path! calls below use absolute paths and are unaffected.
+    //
+    // Both layouts use an `ion/` subdirectory as the runtime root so that cfg/,
+    // dbs/, and extracted scripts never clutter the binary's own directory.
     if let Some(ref root) = monorepo_root {
-        let single_ion_dir = root.join("single-ion");
-        if single_ion_dir.is_dir() {
-            std::env::set_current_dir(&single_ion_dir).unwrap_or_else(|e| {
-                tracing::warn!("could not chdir to single-ion/: {e}");
-            });
-        }
-    } else if let Some(ref dir) = deployment_root {
-        std::env::set_current_dir(dir).unwrap_or_else(|e| {
-            tracing::warn!("could not chdir to deployment dir {}: {e}", dir.display());
+        // Dev layout: <monorepo>/single-ion/ion/
+        let ion_dir = root.join("single-ion").join("ion");
+        let _ = std::fs::create_dir_all(&ion_dir);
+        std::env::set_current_dir(&ion_dir).unwrap_or_else(|e| {
+            tracing::warn!("could not chdir to single-ion/ion/: {e}");
         });
-        tracing::info!("single-ion: using portable deployment layout at {}", dir.display());
+    } else if let Some(ref dir) = deployment_root {
+        // Portable layout: <exe_dir>/ion/
+        let _ = std::fs::create_dir_all(dir);
+        std::env::set_current_dir(dir).unwrap_or_else(|e| {
+            tracing::warn!("could not chdir to {}: {e}", dir.display());
+        });
+        tracing::info!("single-ion: runtime state at {}", dir.display());
     } else {
         tracing::warn!(
-            "single-ion: could not locate a cfg/ directory via exe path or current directory; \
-             config files may not be found — place cfg/ alongside the binary for portable use"
+            "single-ion: could not determine runtime directory; \
+             config files may not be found"
         );
     }
+
+    // Ensure all cfg/*.yaml files exist on disk.  Any that are absent are written from
+    // the copies embedded in the binary.  Files already on disk are left untouched so
+    // that operator customisations survive restarts.
+    ensure_cfg_files();
 
     // monorepo_rel: path relative to monorepo root (dev builds)
     // deploy_rel:   path relative to exe's directory (portable builds)

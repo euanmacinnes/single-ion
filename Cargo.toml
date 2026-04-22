@@ -33,6 +33,7 @@ tokio              = { version = "1", features = ["full"] }
 anyhow             = "1"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+rust-embed         = { version = "8", features = ["debug-embed"] }
 
 # ── Desktop app (WebView shell) — only pulled in with --features desktop-app ──
 # Windows: WebView2, Linux: WebKitGTK, macOS: WKWebView
