@@ -22,6 +22,7 @@ desktop-app  = ["dep:wry", "dep:tao"]
 [dependencies]
 db_server  = { path = "../reactive/crates/db_server" }
 db_configs = { path = "../reactive/crates/db_configs" }
+db_scripts = { path = "../reactive/crates/db_scripts" }
 ion        = { path = "../ion/crates/ion" }
 ion-config = { path = "../ion/crates/config" }
 gluon      = { path = "../gluon/crates/gluon" }

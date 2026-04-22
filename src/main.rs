@@ -51,25 +51,55 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::new(filter))
         .try_init();
 
-    // Resolve the monorepo root via exe-path traversal so that dev paths work regardless
-    // of which directory cargo run is invoked from.  The exe is always inside a `target/`
-    // subtree during development; its parent is the monorepo root (freeradicals/).
-    // In a distributed build the assets are embedded, so these env vars are unused.
-    let monorepo_root: Option<std::path::PathBuf> = std::env::current_exe().ok().and_then(|exe| {
+    // ── Working-directory resolution ─────────────────────────────────────────
+    //
+    // Two layouts are supported:
+    //
+    //  1. Dev / monorepo  — exe lives inside a `target/` subtree.
+    //     monorepo root = first ancestor named `target/`'s parent.
+    //     CWD → `<monorepo>/single-ion/`  (config files at cfg/*.yaml).
+    //     Asset paths resolved as absolute paths under the monorepo root.
+    //
+    //  2. Portable deployment — exe is NOT inside a `target/` tree.
+    //     Detect by checking whether the exe's own directory contains a `cfg/`
+    //     sub-directory (the canonical portable layout: exe + cfg/ side-by-side).
+    //     CWD → exe's directory.
+    //     Asset paths resolved as absolute paths under that directory.
+    //
+    // In both cases the absolute paths are set before CWD is changed, so they
+    // are unaffected by the chdir.
+
+    let exe_path = std::env::current_exe().ok();
+
+    // Case 1: monorepo dev build.
+    let monorepo_root: Option<std::path::PathBuf> = exe_path.as_ref().and_then(|exe| {
         exe.ancestors()
             .find(|p| p.file_name().map(|n| n == "target").unwrap_or(false))
             .and_then(|t| t.parent())
             .map(|p| p.to_path_buf())
     });
 
-    // Helper: set an env var to an absolute monorepo-relative path if not already set.
-    // Falls back to the CWD-relative path (original behaviour) if exe traversal failed.
+    // Case 2: portable deployment (exe-adjacent cfg/).
+    let deployment_root: Option<std::path::PathBuf> = if monorepo_root.is_none() {
+        exe_path.as_ref()
+            .and_then(|exe| exe.parent())
+            .map(|p| p.to_path_buf())
+            .filter(|d| d.join("cfg").is_dir())
+    } else {
+        None
+    };
+
+    // Helper: set an env var to an absolute path if not already set.
+    // Checks the monorepo layout first, then the portable-deployment layout,
+    // then falls back to a CWD-relative string (original behaviour).
     macro_rules! set_path {
-        ($var:expr, $rel:expr, $fallback:expr) => {
+        ($var:expr, $monorepo_rel:expr, $deploy_rel:expr, $fallback:expr) => {
             if std::env::var($var).is_err() {
                 let val = monorepo_root
                     .as_ref()
-                    .map(|r| r.join($rel).to_string_lossy().into_owned())
+                    .map(|r| r.join($monorepo_rel).to_string_lossy().into_owned())
+                    .or_else(|| deployment_root.as_ref()
+                        .map(|d| d.join($deploy_rel).to_string_lossy().into_owned()))
                     .unwrap_or_else(|| $fallback.to_string());
                 // SAFETY: called before any tasks are spawned, so no concurrent env reads.
                 unsafe { std::env::set_var($var, val); }
@@ -77,11 +107,9 @@ async fn main() -> Result<()> {
         };
     }
 
-    // Change CWD to the single-ion/ subdirectory so that every service's
-    // config loader finds its `cfg/*.yaml` file via the standard CWD-relative
-    // path (e.g. `cfg/config.yaml`, `cfg/ion.yaml`, …).  This must happen
-    // before any config is loaded and before the set_path! calls below, which
-    // use absolute paths and are therefore unaffected by the CWD change.
+    // Change CWD so that every service's config loader finds its `cfg/*.yaml`
+    // file at the standard CWD-relative path.  Must happen before config is
+    // loaded; the set_path! calls above use absolute paths and are unaffected.
     if let Some(ref root) = monorepo_root {
         let single_ion_dir = root.join("single-ion");
         if single_ion_dir.is_dir() {
@@ -89,21 +117,77 @@ async fn main() -> Result<()> {
                 tracing::warn!("could not chdir to single-ion/: {e}");
             });
         }
+    } else if let Some(ref dir) = deployment_root {
+        std::env::set_current_dir(dir).unwrap_or_else(|e| {
+            tracing::warn!("could not chdir to deployment dir {}: {e}", dir.display());
+        });
+        tracing::info!("single-ion: using portable deployment layout at {}", dir.display());
+    } else {
+        tracing::warn!(
+            "single-ion: could not locate a cfg/ directory via exe path or current directory; \
+             config files may not be found — place cfg/ alongside the binary for portable use"
+        );
     }
 
-    set_path!("REACTIVE_SCRIPTS_ROOT",    "reactive/scripts",                    "../reactive/scripts");
-    set_path!("REACTIVE_STATIC_DIR",      "reactive/crates/db_server/static",    "../reactive/crates/db_server/static");
-    set_path!("GLUON_STATIC_DIR",         "gluon/static",                        "../gluon/static");
-    set_path!("NEUTRINO_STATIC_DIR",      "neutrino/static",                     "../neutrino/static");
-    set_path!("ION_SERVER__STATIC_DIR",   "ion/static",                          "../ion/static");
+    // monorepo_rel: path relative to monorepo root (dev builds)
+    // deploy_rel:   path relative to exe's directory (portable builds)
+    // fallback:     CWD-relative string used only when neither root is known
+    set_path!("REACTIVE_SCRIPTS_ROOT",  "reactive/scripts", "reactive/scripts", "../reactive/scripts");
+    set_path!("ION_SERVER__STATIC_DIR", "ion/static",       "ion/static",       "../ion/static");
 
     // The monorepo root is needed to build neutrino-base-standard from source.
     if std::env::var("NEUTRINO_BUILD_CONTEXT_DIR").is_err() {
         let val = monorepo_root
             .as_ref()
             .map(|r| r.to_string_lossy().into_owned())
+            .or_else(|| deployment_root.as_ref().map(|d| d.to_string_lossy().into_owned()))
             .unwrap_or_else(|| "..".to_string());
         unsafe { std::env::set_var("NEUTRINO_BUILD_CONTEXT_DIR", val); }
+    }
+
+    // ── Single-ion config defaults ────────────────────────────────────────────
+    // These are the single-ion-specific values that differ from each service's
+    // standalone defaults.  They are applied only if not already set by the
+    // environment or a cfg/*.yaml file.  This makes the binary self-contained:
+    // no cfg/ directory is required for basic operation.
+    macro_rules! default_env {
+        ($var:expr, $val:expr) => {
+            if std::env::var($var).is_err() {
+                // SAFETY: called before any tasks are spawned.
+                unsafe { std::env::set_var($var, $val); }
+            }
+        };
+    }
+    // ION → Reactive: use 127.0.0.1 to bypass Windows localhost → ::1 resolution.
+    default_env!("ION_REACTIVE__URL", "http://127.0.0.1:4749");
+    // Disable connection pooling on loopback — eliminates 3-5 s stall class on Windows.
+    default_env!("ION_REACTIVE__HTTP_POOL_MAX_IDLE_PER_HOST", "0");
+    // Service token for fast single-REST KV path.
+    default_env!("ION_REACTIVE__SERVICE_TOKEN", "single-ion-dev-token");
+    // Gluon: enabled, using loopback IPv4.
+    default_env!("ION_GLUON__ENABLED", "true");
+    default_env!("ION_GLUON__URL", "ws://127.0.0.1:4747/ws");
+
+    // ── Embedded script extraction ────────────────────────────────────────────
+    // If REACTIVE_SCRIPTS_ROOT points at a directory that doesn't exist (e.g.
+    // the binary was copied to a machine without the source tree), extract the
+    // scripts embedded in `db_scripts` to a temp directory and redirect there.
+    // The embedded set is always non-empty in both debug and release builds
+    // thanks to the `debug-embed` feature on db_scripts.
+    let scripts_root_ok = std::env::var("REACTIVE_SCRIPTS_ROOT")
+        .map(|p| std::path::Path::new(&p).is_dir())
+        .unwrap_or(false);
+    if !scripts_root_ok {
+        let scripts_tmp = std::env::temp_dir().join("freeradicals-scripts");
+        match db_scripts::extract_to(&scripts_tmp) {
+            Ok(()) => {
+                tracing::info!("single-ion: extracted embedded scripts to {}", scripts_tmp.display());
+                unsafe { std::env::set_var("REACTIVE_SCRIPTS_ROOT", &scripts_tmp); }
+            }
+            Err(e) => {
+                tracing::warn!("single-ion: could not extract embedded scripts: {e}");
+            }
+        }
     }
 
     tracing::info!("single-ion: loading service configs");
