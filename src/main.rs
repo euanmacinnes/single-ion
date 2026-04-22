@@ -164,9 +164,6 @@ async fn main() -> Result<()> {
     default_env!("ION_REACTIVE__HTTP_POOL_MAX_IDLE_PER_HOST", "0");
     // Service token for fast single-REST KV path.
     default_env!("ION_REACTIVE__SERVICE_TOKEN", "single-ion-dev-token");
-    // Gluon: enabled, using loopback IPv4.
-    default_env!("ION_GLUON__ENABLED", "true");
-    default_env!("ION_GLUON__URL", "ws://127.0.0.1:4747/ws");
 
     // ── Embedded script extraction ────────────────────────────────────────────
     // If REACTIVE_SCRIPTS_ROOT points at a directory that doesn't exist (e.g.
@@ -192,14 +189,15 @@ async fn main() -> Result<()> {
 
     tracing::info!("single-ion: loading service configs");
 
-    // Load all configs before spawning so a bad config fails fast and clean.
-    let ion_config   = ion_config::load()?;
+    // Load Gluon config first so we can derive the actual WebSocket URL from its
+    // bind address.  single-ion always runs Gluon, so ION must connect to whatever
+    // port Gluon actually binds to — not a hardcoded default.
     let gluon_config = gluon::config::Config::load().unwrap_or_default();
 
-    // Inject the actual Gluon WebSocket URL (derived from gluon's bind address)
-    // as env vars so neutrino's config loader picks them up via Figment's Env
-    // layer.  This ensures neutrino always connects to the same Gluon instance
-    // that single-ion started, regardless of what cfg/neutrino.yaml says.
+    // Derive the Gluon WS URL from the actual bind address and inject it for both
+    // ION and Neutrino.  These are unconditional: single-ion always runs Gluon, so
+    // ION_GLUON__ENABLED must be true and the URL must match the real bind port.
+    // Using unsafe set_var is safe here — no tasks spawned yet.
     {
         let gluon_ws_url = {
             let bind = &gluon_config.bind;
@@ -208,6 +206,11 @@ async fn main() -> Result<()> {
             format!("ws://{addr}/ws")
         };
         unsafe {
+            // Force Gluon enabled — single-ion always runs it.
+            std::env::set_var("ION_GLUON__ENABLED", "true");
+            // Force the URL to match the actual bind port, overriding any cfg/ion.yaml value.
+            std::env::set_var("ION_GLUON__URL", &gluon_ws_url);
+            // Neutrino: only set if not already overridden by the operator.
             if std::env::var("NEUTRINO_GLUON__INTERNAL_URL").is_err() {
                 std::env::set_var("NEUTRINO_GLUON__INTERNAL_URL", &gluon_ws_url);
             }
@@ -217,6 +220,8 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Load ION config after Gluon URL is resolved so it picks up the correct values.
+    let ion_config   = ion_config::load()?;
     let neut_config  = neutrino::config::Config::load().unwrap_or_default();
     // Reactive config is loaded inside db_server::run() via db_configs::init_global().
 
