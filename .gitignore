@@ -6,3 +6,4 @@ Cargo.lock
 /files/environments/*.json
 /files/registry/blobs/
 /files/registry/manifests/
+/ion/

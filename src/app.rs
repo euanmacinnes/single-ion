@@ -40,6 +40,7 @@
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+mod folders;
 
 use anyhow::{Context, Result};
 use tao::{
@@ -208,6 +209,8 @@ fn main() -> Result<()> {
         eprintln!("single-ion is already running.");
         return Ok(());
     }
+
+    let (monorepo_root, deployment_root) = folders::init_folders();
 
     // ── 2. Reserve five ephemeral loopback ports ─────────────────────────────
     let (gluon_port,    gl) = reserve()?;
