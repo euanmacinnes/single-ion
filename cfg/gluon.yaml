@@ -1,0 +1,4 @@
+# gluon configuration — used when running the freeradicals embedded binary.
+# See gluon/cfg/gluon.yaml for the full option set.
+
+bind: "0.0.0.0:4747"

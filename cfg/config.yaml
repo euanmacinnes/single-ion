@@ -1,0 +1,176 @@
+# Reactive configuration — used by the embedded freeradicals binary.
+# Mirrors reactive/cfg/config.yaml exactly; only port and db_root differ.
+
+server:
+  host: "0.0.0.0"
+  port: 4749
+  workers: 0            # 0 = auto (num_cpus)
+  websocket_max_conns: 1024
+
+interfaces:
+  http:
+    enabled: true
+  pgwire:
+    enabled: true
+  ws:
+    enabled: true
+
+logging:
+  level: "info"
+  json: false
+  query_logging: false
+  debug: false
+
+security:
+  enable_tls: false
+  tls_cert_path: null
+  tls_key_path: null
+  allow_origin: null
+  admin_user: null           # set via REACTIVE__SECURITY__ADMIN_USER
+  admin_password: null       # set via REACTIVE__SECURITY__ADMIN_PASSWORD
+  dev_insecure: false
+  # Dev-only loopback service token. Enables the fast single-REST KV path
+  # for `record_recent` and other internal callers, bypassing SQL parsing
+  # and session validation. Not a security concern in single-ion because
+  # there is no network boundary — everything is one process on loopback —
+  # but the ION side (`single-ion/cfg/ion.yaml → reactive.service_token`)
+  # must match this value verbatim. For any real deployment, replace with
+  # a fresh random value (e.g. `openssl rand -base64 32`).
+  service_token: "single-ion-dev-token"
+
+  # OAuth2 / OIDC providers — defined here so secrets never touch the DB.
+  # Synced into security.oauth2_providers on startup (ON CONFLICT DO NOTHING).
+  # On first install with no admin user, Reactive enters bootstrap mode and
+  # the /setup page is shown.  The first login (local or SSO) becomes admin.
+  #
+  # Example: Google OAuth2
+  # Register at https://console.cloud.google.com/apis/credentials
+  # Authorised redirect URI:  http://localhost:8080/auth/callback/google
+  #
+  # oauth2_providers:
+  #   - provider_id: google
+  #     display_name: Google
+  #     client_id: "123456789-abc.apps.googleusercontent.com"
+  #     client_secret: "GOCSPX-your-client-secret"
+  #     auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+  #     token_url: "https://oauth2.googleapis.com/token"
+  #     redirect_uri: "http://localhost:8080/auth/callback/google"
+  #     scopes: "openid profile email"
+  #     pkce_enabled: true
+  #     icon_url: "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+  #
+  # Environment variable equivalent:
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__PROVIDER_ID=google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__DISPLAY_NAME=Google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__CLIENT_ID=123456789-abc.apps.googleusercontent.com
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__CLIENT_SECRET=GOCSPX-your-client-secret
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__AUTH_URL=https://accounts.google.com/o/oauth2/v2/auth
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__TOKEN_URL=https://oauth2.googleapis.com/token
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__REDIRECT_URI=http://localhost:8080/auth/callback/google
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__SCOPES=openid profile email
+  #   REACTIVE__SECURITY__OAUTH2_PROVIDERS__0__PKCE_ENABLED=true
+  oauth2_providers:
+    - provider_id: google
+      display_name: Google
+      client_id: "your-client-id.apps.googleusercontent.com"
+      client_secret: "GOCSPX-your-client-secret"
+      auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+      token_url: "https://oauth2.googleapis.com/token"
+      redirect_uri: "http://localhost:8080/auth/callback/google"
+      scopes: "openid profile email"
+      pkce_enabled: true
+      icon_url: "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+
+paths:
+  db_root: dbs
+  temp_dir: null
+  udf_dir: null
+  logs_dir: null
+  install_dir: null  # resolved automatically via REACTIVE_SCRIPTS_ROOT set in main.rs
+
+pgwire:
+  enabled: true
+  host: "0.0.0.0"
+  port: 5433
+  trace: false
+  trust: false
+  scram: true
+
+http:
+  request_body_limit_mb: 64
+  idle_timeout_secs: 60
+  session_idle_secs: 1800
+  session_abs_secs: 86400
+
+udf:
+  ordered_roots: []
+  lua_instruction_limit: 10000
+  lua_timeout_ms: 15000000
+  lua_remote_timeout_ms: 50000
+  lua_memory_limit_bytes: 8388608000
+  autoload_for_tests: false
+
+time:
+  utc_only: true
+
+metrics:
+  enabled: true
+  push_gateway: null
+
+ha:
+  enabled: false
+  engine: "openraft"
+
+storage:
+  parquet_compression: "zstd"
+  mmap_graphstore: true
+  max_open_files: 512
+  commit_window_ms: 3
+  gc_max_delta_records: 10000
+  gc_tombstone_ratio_ppm: 300000
+  gc_max_delta_age_ms: 300000
+
+autotune:
+  enabled: true
+  tick_ms: 2000
+  target_vis_ms: 1000
+  smoothing_alpha: 0.2
+  deriv_beta: 0.2
+  publisher_interval_min_ms: 100
+  publisher_interval_max_ms: 2000
+  max_step_ms: 100
+  catchup_budget_min: 64000
+  catchup_budget_max: 16000000
+  max_step_budget: 64000
+  hysteresis_ms: 150
+  lookback_min: 5
+
+gluon:
+  enabled: true
+  # Use 127.0.0.1 — see comment in single-ion/cfg/ion.yaml (Win10 IPv6 quirk).
+  url: "ws://127.0.0.1:4747/ws"
+
+dev_ftp:
+  enabled: false
+  addr: "0.0.0.0"
+  port: 2121
+
+fixture:
+  beverage: true   # Signature Beverage demo (tasks/threads/entries)
+  f1: true         # SX-2201 pharmaceutical demo
+
+agent:
+  run_bootstrap: true    # create sql_dev workflow agents on first startup
+  query_token: ""        # leave empty — a UUID is auto-generated on first startup
+                         # and saved to <db_root>/.system/agent_query_token
+                         # override via REACTIVE__AGENT_QUERY_TOKEN to pin a specific value
+  planner_model: "qwen2.5-coder:7b"   # fast planning agent (fits in 6 GB VRAM)
+  writer_model:  "qwen2.5-coder:7b"   # SQL writer and corrector
+  embed_model:   "nomic-embed-text"   # query history embeddings (~274 MB)
+  ollama_url:    "http://localhost:11434"
+  auto_pull:     true                   # automatically pull missing models from Ollama
+  ollama_vram_gb: 0                    # 0 = no limit; set to GPU VRAM in GB to constrain auto:* tier selection
+  model_tiers:                         # ranked preference lists for auto:* model resolution
+    text:      ["gemma3:4b", "gemma3:1b", "llama3.1:latest", "qwen2.5:7b"]
+    code:      ["qwen2.5-coder:7b", "deepseek-coder:latest", "codellama:latest", "gemma3:4b"]
+    embedding: ["nomic-embed-text", "all-minilm:latest"]
