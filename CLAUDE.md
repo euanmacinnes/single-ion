@@ -62,3 +62,14 @@ For local debugging this means:
 
 When reporting "this is slow" against single-ion, paste the trace detail (not screenshots) so
 the per-stage span breakdown is preserved.
+
+## Plan Discipline — Scaffolds Are Not Done
+
+A scaffold is never the same as a finished plan step. A `tokio::spawn` that boots a service
+stub, a wrapper binary that prints "would run X", or a wiring layer with no real services
+behind it are transitory steps — not delivery.
+
+- Never report a plan item or task as "done" / "complete" when only a scaffold exists.
+- A step is complete only when behavior is verifiable end-to-end across the bundled
+  services: ION serves real pages, Reactive runs real SQL, Gluon routes real messages.
+- See the root `CLAUDE.md` "Scaffolds are not completed work" section.
